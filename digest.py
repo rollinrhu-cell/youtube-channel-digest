@@ -430,7 +430,7 @@ def run_digest(digest: dict, state: dict) -> bool:
     if success:
         state[digest_id] = {
             "last_run": datetime.now().isoformat(),
-            "seen_ids": list(seen_ids | set(video_ids))[-500],  # Keep last 500
+            "seen_ids": list(seen_ids | set(video_ids))[-500:],  # Keep last 500
         }
 
     return success
