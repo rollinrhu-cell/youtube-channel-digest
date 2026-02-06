@@ -295,14 +295,23 @@ If no guests, use empty array: "guests": []"""
 
 def format_email_html(
     digest_name: str,
+    digest_id: str,
+    recipient_email: str,
     start_date: datetime,
     end_date: datetime,
     videos: list[dict],
     analysis: dict,
+    repo_owner: str = "rollinrhu-cell",
+    repo_name: str = "youtube-channel-digest",
 ) -> str:
     """Format the digest as HTML email."""
+    from urllib.parse import quote
 
     date_range = f"{start_date.strftime('%B %d')} - {end_date.strftime('%B %d, %Y')}"
+
+    # Build unsubscribe URL (creates a GitHub issue)
+    unsubscribe_body = f"Please unsubscribe me from this digest.\\n\\n---\\nDigest ID: {digest_id}\\nEmail: {recipient_email}"
+    unsubscribe_url = f"https://github.com/{repo_owner}/{repo_name}/issues/new?title=Unsubscribe&body={quote(unsubscribe_body)}&labels=unsubscribe"
 
     videos_html = ""
     for v in videos:
@@ -360,7 +369,8 @@ def format_email_html(
         {videos_html}
 
         <p style="color: #999; font-size: 12px; margin-top: 32px; text-align: center;">
-            Generated {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
+            Generated {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}<br>
+            <a href="{unsubscribe_url}" style="color: #999;">Unsubscribe</a>
         </p>
     </body>
     </html>
@@ -494,10 +504,21 @@ def run_digest(digest: dict, state: dict) -> bool:
     print("  Analyzing with Gemini...")
     analysis = analyze_with_gemini(all_videos, name)
 
-    # Format and send email
-    html = format_email_html(name, start_date, end_date, all_videos, analysis)
+    # Format and send email to each recipient (personalized unsubscribe links)
     subject = f"{name} - {end_date.strftime('%B %d, %Y')}"
-    success = send_email(recipients, subject, html)
+    success = False
+    for recipient in recipients:
+        html = format_email_html(
+            digest_name=name,
+            digest_id=digest_id,
+            recipient_email=recipient,
+            start_date=start_date,
+            end_date=end_date,
+            videos=all_videos,
+            analysis=analysis,
+        )
+        if send_email([recipient], subject, html):
+            success = True
 
     # Update state
     if success:
@@ -519,6 +540,11 @@ def main():
         return
 
     for digest in config["digests"]:
+        # Skip digests with no recipients
+        if not digest.get("recipients"):
+            print(f"Skipping {digest['name']} (no recipients)")
+            continue
+
         if should_run_digest(digest, state):
             run_digest(digest, state)
         else:
