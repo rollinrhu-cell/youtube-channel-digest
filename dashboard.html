@@ -419,7 +419,10 @@
                 <h1>YouTube Digest Dashboard</h1>
                 <p class="subtitle">Manage your channel subscriptions and email digests</p>
             </div>
-            <button class="settings-btn" onclick="showSettingsModal()">Settings</button>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-primary" onclick="showCreateModal()">+ New Digest</button>
+                <button class="settings-btn" onclick="showSettingsModal()">Settings</button>
+            </div>
         </header>
 
         <div id="content">
@@ -438,6 +441,35 @@
             <div class="modal-actions">
                 <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
                 <button class="btn btn-primary" id="modalSubmitBtn" onclick="submitModal()">Add</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Digest Modal -->
+    <div class="modal-overlay" id="createOverlay">
+        <div class="modal">
+            <h3>Create New Digest</h3>
+            <p>Set up a new email digest for YouTube channels.</p>
+
+            <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">Digest Name *</label>
+            <input type="text" id="createName" placeholder="e.g., Tech Podcasts Weekly">
+
+            <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">Frequency</label>
+            <select id="createFrequency" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 16px;">
+                <option value="daily">Daily</option>
+                <option value="biweekly" selected>Biweekly (twice a week)</option>
+                <option value="weekly">Weekly</option>
+            </select>
+
+            <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">First Channel URL</label>
+            <input type="text" id="createChannel" placeholder="https://youtube.com/@channelname">
+
+            <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">Your Email *</label>
+            <input type="email" id="createEmail" placeholder="you@email.com">
+
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeCreateModal()">Cancel</button>
+                <button class="btn btn-primary" id="createSubmitBtn" onclick="submitCreateDigest()">Create Digest</button>
             </div>
         </div>
     </div>
@@ -497,6 +529,65 @@
             localStorage.removeItem('github_token');
             showToast('Token cleared', 'success');
             closeSettings();
+        }
+
+        // Create Digest Modal
+        function showCreateModal() {
+            document.getElementById('createName').value = '';
+            document.getElementById('createFrequency').value = 'biweekly';
+            document.getElementById('createChannel').value = '';
+            document.getElementById('createEmail').value = '';
+            document.getElementById('createOverlay').classList.add('active');
+            document.getElementById('createName').focus();
+        }
+
+        function closeCreateModal() {
+            document.getElementById('createOverlay').classList.remove('active');
+        }
+
+        async function submitCreateDigest() {
+            const name = document.getElementById('createName').value.trim();
+            const frequency = document.getElementById('createFrequency').value;
+            const channel = document.getElementById('createChannel').value.trim();
+            const email = document.getElementById('createEmail').value.trim();
+
+            if (!name) {
+                showToast('Please enter a digest name', 'error');
+                return;
+            }
+
+            if (!email) {
+                showToast('Please enter your email', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('createSubmitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>';
+
+            // Generate ID from name
+            const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+            const newDigest = {
+                id: id,
+                name: name,
+                recipients: [email],
+                channels: channel ? [channel] : [],
+                frequency: frequency
+            };
+
+            config.digests.push(newDigest);
+
+            if (await saveConfig()) {
+                showToast('Digest created!', 'success');
+                renderDashboard();
+                closeCreateModal();
+            } else {
+                config.digests.pop();
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Create Digest';
         }
 
         // Toast notifications
@@ -904,10 +995,15 @@
             if (e.target === e.currentTarget) closeSettings();
         });
 
+        document.getElementById('createOverlay').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeCreateModal();
+        });
+
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 closeModal();
                 closeSettings();
+                closeCreateModal();
             }
             if (e.key === 'Enter' && document.getElementById('modalOverlay').classList.contains('active')) {
                 submitModal();
