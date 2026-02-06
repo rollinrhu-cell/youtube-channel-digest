@@ -505,7 +505,7 @@ def run_digest(digest: dict, state: dict) -> bool:
     analysis = analyze_with_gemini(all_videos, name)
 
     # Format and send email to each recipient (personalized unsubscribe links)
-    subject = f"{name} - {end_date.strftime('%B %d, %Y')}"
+    subject = f"{name} - {start_date.strftime('%B %d')} to {end_date.strftime('%B %d, %Y')}"
     success = False
     for recipient in recipients:
         html = format_email_html(
