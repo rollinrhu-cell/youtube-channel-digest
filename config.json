@@ -1,3 +1,15 @@
 {
-  "digests": []
+  "digests": [
+    {
+      "id": "democratic-party-monitor",
+      "name": "Democratic Party Monitor",
+      "recipients": [
+        "REDACTED"
+      ],
+      "channels": [
+        "https://www.youtube.com/@podsaveamerica, https://www.youtube.com/@podsavetheworld"
+      ],
+      "frequency": "biweekly"
+    }
+  ]
 }
