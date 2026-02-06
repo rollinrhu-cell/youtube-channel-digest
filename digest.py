@@ -186,12 +186,38 @@ def get_video_comments(video_id: str, max_comments: int = 50) -> list[str]:
         return []
 
 
+def _call_gemini_with_retry(client, model: str, prompt: str, temperature: float = 0.3, max_retries: int = 3):
+    """Call Gemini API with retry logic for rate limits."""
+    import time
+
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=temperature),
+            )
+            return response.text.strip()
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                wait_time = (attempt + 1) * 15  # 15s, 30s, 45s
+                print(f"    Rate limited, waiting {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                raise e
+    return None
+
+
 def analyze_with_gemini(videos: list[dict], digest_name: str) -> dict:
     """Use Gemini to analyze videos and extract insights."""
     if not GEMINI_API_KEY:
         return {"themes": "AI analysis unavailable (no API key)", "video_analyses": {}}
 
     client = genai.Client(api_key=GEMINI_API_KEY)
+
+    # Try different models if one is rate-limited
+    models_to_try = ["gemini-2.0-flash-lite", "gemini-flash-lite-latest", "gemini-2.0-flash"]
 
     # Prepare video summaries for analysis
     video_summaries = []
@@ -215,15 +241,19 @@ Videos:
 
 Write a concise, insightful paragraph about the themes. Be specific about topics discussed."""
 
-    try:
-        themes_response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=themes_prompt,
-            config=types.GenerateContentConfig(temperature=0.3),
-        )
-        themes = themes_response.text.strip()
-    except Exception as e:
-        themes = f"Unable to generate themes: {e}"
+    themes = None
+    for model in models_to_try:
+        try:
+            result = _call_gemini_with_retry(client, model, themes_prompt, temperature=0.3)
+            if result:
+                themes = result
+                break
+        except Exception as e:
+            print(f"    Model {model} failed: {e}")
+            continue
+
+    if not themes:
+        themes = "Theme analysis unavailable"
 
     # Analyze each video
     video_analyses = {}
@@ -245,22 +275,20 @@ You MUST respond with ONLY valid JSON in this exact format, no other text:
 
 If no guests, use empty array: "guests": []"""
 
-        try:
-            response = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=video_prompt,
-                config=types.GenerateContentConfig(temperature=0.1),
-            )
-            # Extract JSON from response
-            text = response.text.strip()
-            # Find JSON in response
-            json_match = re.search(r'\{[^{}]+\}', text)
-            if json_match:
-                video_analyses[v['id']] = json.loads(json_match.group())
-            else:
-                video_analyses[v['id']] = {"guests": [], "topics": [], "sentiment": "unknown"}
-        except Exception:
-            video_analyses[v['id']] = {"guests": [], "topics": [], "sentiment": "unknown"}
+        parsed = None
+        for model in models_to_try:
+            try:
+                text = _call_gemini_with_retry(client, model, video_prompt, temperature=0.1)
+                if text:
+                    # Find JSON in response
+                    json_match = re.search(r'\{[^{}]+\}', text)
+                    if json_match:
+                        parsed = json.loads(json_match.group())
+                        break
+            except Exception:
+                continue
+
+        video_analyses[v['id']] = parsed or {"guests": [], "topics": [], "sentiment": "unknown"}
 
     return {"themes": themes, "video_analyses": video_analyses}
 
@@ -469,7 +497,6 @@ def run_digest(digest: dict, state: dict) -> bool:
     # Format and send email
     html = format_email_html(name, start_date, end_date, all_videos, analysis)
     subject = f"{name} - {end_date.strftime('%B %d, %Y')}"
-
     success = send_email(recipients, subject, html)
 
     # Update state
