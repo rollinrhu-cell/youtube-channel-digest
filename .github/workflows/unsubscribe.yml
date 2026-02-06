@@ -1,0 +1,100 @@
+name: Process Unsubscribe
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  unsubscribe:
+    if: contains(github.event.issue.title, 'Unsubscribe') || contains(github.event.issue.labels.*.name, 'unsubscribe')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse unsubscribe request
+        id: parse
+        run: |
+          BODY="${{ github.event.issue.body }}"
+
+          # Extract digest ID and email from issue body
+          DIGEST_ID=$(echo "$BODY" | grep -oP 'Digest ID: \K[^\s]+' || echo "")
+          EMAIL=$(echo "$BODY" | grep -oP 'Email: \K[^\s]+' || echo "")
+
+          echo "digest_id=$DIGEST_ID" >> $GITHUB_OUTPUT
+          echo "email=$EMAIL" >> $GITHUB_OUTPUT
+
+          if [ -z "$DIGEST_ID" ] || [ -z "$EMAIL" ]; then
+            echo "valid=false" >> $GITHUB_OUTPUT
+          else
+            echo "valid=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update config.json
+        if: steps.parse.outputs.valid == 'true'
+        run: |
+          python3 << 'EOF'
+          import json
+
+          digest_id = "${{ steps.parse.outputs.digest_id }}"
+          email = "${{ steps.parse.outputs.email }}"
+
+          with open("config.json", "r") as f:
+              config = json.load(f)
+
+          modified = False
+          for digest in config.get("digests", []):
+              if digest.get("id") == digest_id or digest.get("name") == digest_id:
+                  if email in digest.get("recipients", []):
+                      digest["recipients"].remove(email)
+                      modified = True
+                      print(f"Removed {email} from {digest_id}")
+
+          if modified:
+              with open("config.json", "w") as f:
+                  json.dump(config, f, indent=2)
+              print("Config updated")
+          else:
+              print("No changes needed")
+          EOF
+
+      - name: Commit changes
+        if: steps.parse.outputs.valid == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add config.json
+          git diff --staged --quiet || git commit -m "Unsubscribe ${{ steps.parse.outputs.email }} from ${{ steps.parse.outputs.digest_id }}"
+          git push
+
+      - name: Close issue with comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const valid = '${{ steps.parse.outputs.valid }}' === 'true';
+            const email = '${{ steps.parse.outputs.email }}';
+            const digestId = '${{ steps.parse.outputs.digest_id }}';
+
+            let body;
+            if (valid) {
+              body = `Successfully unsubscribed **${email}** from **${digestId}**.\n\nYou will no longer receive this digest.`;
+            } else {
+              body = `Could not process unsubscribe request. Missing digest ID or email in the request body.\n\nExpected format:\n\`\`\`\nDigest ID: your-digest-id\nEmail: your@email.com\n\`\`\``;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
+            });
