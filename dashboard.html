@@ -187,17 +187,105 @@
         .channels-list, .recipients-list {
             list-style: none;
             margin-bottom: 20px;
+            display: grid;
+            gap: 8px;
         }
 
-        .channels-list li, .recipients-list li {
-            padding: 8px 12px;
-            background: #f8f9fa;
-            border-radius: 6px;
-            margin-bottom: 6px;
+        .channels-list {
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        }
+
+        .channel-card {
+            background: linear-gradient(135deg, #fef2f2 0%, #fff 100%);
+            border: 1px solid #fecaca;
+            border-radius: 10px;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.2s;
+        }
+
+        .channel-card:hover {
+            border-color: #f87171;
+            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.1);
+        }
+
+        .channel-icon {
+            width: 40px;
+            height: 40px;
+            background: #ef4444;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .channel-icon svg {
+            width: 20px;
+            height: 20px;
+            fill: white;
+        }
+
+        .channel-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .channel-name {
+            font-weight: 500;
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #1a1a1a;
+        }
+
+        .channel-name a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .channel-name a:hover {
+            color: #ef4444;
+        }
+
+        .channel-url {
+            font-size: 11px;
+            color: #999;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .channel-remove {
+            color: #ccc;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            padding: 4px;
+            border-radius: 4px;
+        }
+
+        .channel-remove:hover {
+            color: #ef4444;
+            background: #fef2f2;
+        }
+
+        .recipients-list li {
+            padding: 10px 14px;
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 8px;
             font-size: 14px;
             display: flex;
             align-items: center;
             justify-content: space-between;
+        }
+
+        .recipients-list li:hover {
+            border-color: #86efac;
         }
 
         .item-content {
@@ -1036,6 +1124,7 @@
             digests.forEach((digest, index) => {
                 const digestId = digest.id || digest.name;
                 const hasRecipients = digest.recipients && digest.recipients.length > 0;
+                const hasChannels = digest.channels && digest.channels.length > 0;
                 const frequency = digest.frequency || 'daily';
 
                 html += `
@@ -1058,14 +1147,26 @@
                                 Channels (${digest.channels?.length || 0})
                                 <span class="add-btn" onclick="showAddModal('channel', ${index})">+ Add Channel</span>
                             </div>
-                            <ul class="channels-list">
-                                ${(digest.channels || []).map((ch, i) => `
-                                    <li>
-                                        <span class="item-content" data-icon="📺">${escapeHtml(formatChannelUrl(ch))}</span>
-                                        <span class="remove-btn" onclick="removeChannel(${index}, ${i})" title="Remove channel">×</span>
-                                    </li>
-                                `).join('')}
-                            </ul>
+                            ${hasChannels ? `
+                                <div class="channels-list">
+                                    ${digest.channels.map((ch, i) => `
+                                        <div class="channel-card">
+                                            <div class="channel-icon">
+                                                <svg viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                                            </div>
+                                            <div class="channel-info">
+                                                <div class="channel-name">
+                                                    <a href="${escapeHtml(ch)}" target="_blank">${escapeHtml(formatChannelUrl(ch))}</a>
+                                                </div>
+                                                <div class="channel-url">${escapeHtml(ch.replace('https://www.youtube.com/', ''))}</div>
+                                            </div>
+                                            <span class="channel-remove" onclick="removeChannel(${index}, ${i})" title="Remove channel">×</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            ` : `
+                                <p style="color: #999; font-size: 13px; font-style: italic; margin-bottom: 16px;">No channels added yet</p>
+                            `}
 
                             <div class="section-title">
                                 Subscribers (${digest.recipients?.length || 0})
