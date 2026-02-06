@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Digest Dashboard</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: #f5f5f5;
+            color: #1a1a1a;
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 32px;
+        }
+
+        .stats {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px 24px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            flex: 1;
+        }
+
+        .stat-number {
+            font-size: 32px;
+            font-weight: 600;
+            color: #2563eb;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .digest-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .digest-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .digest-name {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .digest-frequency {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: white;
+            background: #2563eb;
+            padding: 4px 10px;
+            border-radius: 12px;
+        }
+
+        .digest-frequency.daily { background: #059669; }
+        .digest-frequency.biweekly { background: #2563eb; }
+        .digest-frequency.weekly { background: #7c3aed; }
+
+        .digest-body {
+            padding: 20px 24px;
+        }
+
+        .section-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #666;
+            margin-bottom: 12px;
+        }
+
+        .channels-list, .recipients-list {
+            list-style: none;
+            margin-bottom: 20px;
+        }
+
+        .channels-list li, .recipients-list li {
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .channels-list li::before {
+            content: "📺";
+        }
+
+        .recipients-list li::before {
+            content: "📧";
+        }
+
+        .no-recipients {
+            color: #dc2626;
+            font-style: italic;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #eee;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            text-decoration: none;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #666;
+        }
+
+        .error {
+            background: #fef2f2;
+            color: #dc2626;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            color: #666;
+        }
+
+        .last-updated {
+            text-align: center;
+            color: #999;
+            font-size: 12px;
+            margin-top: 32px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>YouTube Digest Dashboard</h1>
+        <p class="subtitle">Manage your channel subscriptions and email digests</p>
+
+        <div id="content">
+            <div class="loading">Loading subscriptions...</div>
+        </div>
+
+        <p class="last-updated" id="lastUpdated"></p>
+    </div>
+
+    <script>
+        const REPO_OWNER = 'rollinrhu-cell';
+        const REPO_NAME = 'youtube-channel-digest';
+        const CONFIG_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/config.json`;
+
+        async function loadConfig() {
+            const content = document.getElementById('content');
+
+            try {
+                const response = await fetch(CONFIG_URL + '?t=' + Date.now());
+                if (!response.ok) throw new Error('Failed to fetch config');
+
+                const config = await response.json();
+                renderDashboard(config);
+            } catch (error) {
+                content.innerHTML = `
+                    <div class="error">
+                        Failed to load subscriptions: ${error.message}
+                    </div>
+                    <div class="empty-state">
+                        <p>Make sure the repository is public or check the configuration.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function renderDashboard(config) {
+            const content = document.getElementById('content');
+            const digests = config.digests || [];
+
+            if (digests.length === 0) {
+                content.innerHTML = `
+                    <div class="empty-state">
+                        <p>No digests configured yet.</p>
+                        <p style="margin-top: 12px;">
+                            <a href="digest-config.html" class="btn btn-primary">Create Your First Digest</a>
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Calculate stats
+            const totalDigests = digests.length;
+            const totalSubscribers = digests.reduce((sum, d) => sum + (d.recipients?.length || 0), 0);
+            const totalChannels = digests.reduce((sum, d) => sum + (d.channels?.length || 0), 0);
+
+            let html = `
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-number">${totalDigests}</div>
+                        <div class="stat-label">Active Digests</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${totalSubscribers}</div>
+                        <div class="stat-label">Subscribers</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${totalChannels}</div>
+                        <div class="stat-label">Channels Monitored</div>
+                    </div>
+                </div>
+            `;
+
+            for (const digest of digests) {
+                const hasRecipients = digest.recipients && digest.recipients.length > 0;
+                const frequency = digest.frequency || 'daily';
+
+                html += `
+                    <div class="digest-card">
+                        <div class="digest-header">
+                            <span class="digest-name">${digest.name}</span>
+                            <span class="digest-frequency ${frequency}">${frequency}</span>
+                        </div>
+                        <div class="digest-body">
+                            <div class="section-title">Channels (${digest.channels?.length || 0})</div>
+                            <ul class="channels-list">
+                                ${(digest.channels || []).map(ch => `<li>${formatChannelUrl(ch)}</li>`).join('')}
+                            </ul>
+
+                            <div class="section-title">Subscribers (${digest.recipients?.length || 0})</div>
+                            ${hasRecipients ? `
+                                <ul class="recipients-list">
+                                    ${digest.recipients.map(r => `<li>${r}</li>`).join('')}
+                                </ul>
+                            ` : `
+                                <p class="no-recipients">No subscribers - this digest is paused</p>
+                            `}
+
+                            <div class="actions">
+                                <a href="https://github.com/${REPO_OWNER}/${REPO_NAME}/edit/main/config.json"
+                                   class="btn btn-secondary" target="_blank">Edit Config</a>
+                                <a href="https://github.com/${REPO_OWNER}/${REPO_NAME}/actions"
+                                   class="btn btn-secondary" target="_blank">View Runs</a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            content.innerHTML = html;
+            document.getElementById('lastUpdated').textContent =
+                `Last refreshed: ${new Date().toLocaleString()}`;
+        }
+
+        function formatChannelUrl(url) {
+            // Extract channel name or ID from URL
+            const match = url.match(/youtube\.com\/@([^\/]+)/) ||
+                          url.match(/youtube\.com\/channel\/([^\/]+)/) ||
+                          url.match(/youtube\.com\/c\/([^\/]+)/);
+            return match ? match[1] : url;
+        }
+
+        // Load on page load
+        loadConfig();
+
+        // Auto-refresh every 60 seconds
+        setInterval(loadConfig, 60000);
+    </script>
+</body>
+</html>
