@@ -1,3 +1,18 @@
 {
-  "digests": []
+  "digests": [
+    {
+      "id": "democratic-party-monitor",
+      "name": "Democratic Party Monitor",
+      "recipients": [
+        "REDACTED"
+      ],
+      "channels": [
+        "https://www.youtube.com/channel/UCKRoXz3hHAu2XL_k3Ef4vJQ",
+        "https://www.youtube.com/channel/UCWeKyWiFeb4YV8e3EibEqQw",
+        "https://www.youtube.com/channel/UCG4Hp1KbGw4e02N7FpPXDgQ",
+        "https://www.youtube.com/channel/UCPwWvr4tFnmOLpjzmIbDMgQ"
+      ],
+      "frequency": "biweekly"
+    }
+  ]
 }
