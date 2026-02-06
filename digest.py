@@ -283,28 +283,35 @@ def format_email_html(
         topics = vid_analysis.get("topics", [])
         sentiment = vid_analysis.get("sentiment", "unknown")
 
-        guest_str = f"<strong>Guests:</strong> {', '.join(guests)}<br>" if guests else ""
-        topics_str = "<strong>Topics:</strong> " + ", ".join(topics) + "<br>" if topics else ""
-
-        sentiment_emoji = {"positive": "👍", "negative": "👎", "mixed": "🤔"}.get(sentiment, "")
-        sentiment_str = f"<strong>Comment sentiment:</strong> {sentiment} {sentiment_emoji}<br>" if sentiment != "unknown" else ""
-
         views = v.get("views", 0)
         views_str = f"{views:,}" if views else "N/A"
 
+        # Build details section
+        details_lines = []
+        if guests:
+            details_lines.append(f"<strong>Guests:</strong> {', '.join(guests)}")
+        if topics:
+            details_lines.append(f"<strong>Topics:</strong> {', '.join(topics)}")
+
+        sentiment_emoji = {"positive": "👍", "negative": "👎", "mixed": "🤔"}.get(sentiment, "")
+        if sentiment and sentiment != "unknown":
+            details_lines.append(f"<strong>Sentiment:</strong> {sentiment} {sentiment_emoji}")
+
+        details_html = ""
+        if details_lines:
+            details_html = "<br>".join(details_lines)
+
         videos_html += f"""
-        <div style="margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid #e0e0e0;">
-            <h3 style="margin: 0 0 8px 0; font-size: 16px;">
+        <div style="margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0;">
+            <h3 style="margin: 0 0 6px 0; font-size: 16px; line-height: 1.3;">
                 <a href="{v['url']}" style="color: #1a1a1a; text-decoration: none;">{v['title']}</a>
             </h3>
-            <p style="margin: 0 0 8px 0; color: #666; font-size: 14px;">
-                {v['channel']} • {views_str} views
+            <p style="margin: 0 0 10px 0; color: #666; font-size: 13px;">
+                {v['channel']} &bull; {views_str} views
             </p>
-            <p style="margin: 0; font-size: 14px; color: #333;">
-                {guest_str}
-                {topics_str}
-                {sentiment_str}
-            </p>
+            <div style="font-size: 14px; color: #333; line-height: 1.6;">
+                {details_html}
+            </div>
         </div>
         """
 
