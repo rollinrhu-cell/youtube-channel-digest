@@ -24,6 +24,13 @@
             margin: 0 auto;
         }
 
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 32px;
+        }
+
         h1 {
             font-size: 28px;
             margin-bottom: 8px;
@@ -31,7 +38,20 @@
 
         .subtitle {
             color: #666;
-            margin-bottom: 32px;
+        }
+
+        .settings-btn {
+            background: none;
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .settings-btn:hover {
+            background: #f3f4f6;
         }
 
         .stats {
@@ -192,6 +212,11 @@
             gap: 6px;
         }
 
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         .btn-primary {
             background: #2563eb;
             color: white;
@@ -212,7 +237,7 @@
             color: #059669;
         }
 
-        .btn:hover {
+        .btn:hover:not(:disabled) {
             opacity: 0.85;
         }
 
@@ -225,6 +250,14 @@
         .error {
             background: #fef2f2;
             color: #dc2626;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .success {
+            background: #ecfdf5;
+            color: #059669;
             padding: 16px;
             border-radius: 8px;
             margin-bottom: 20px;
@@ -265,12 +298,18 @@
             background: white;
             border-radius: 12px;
             padding: 24px;
-            max-width: 400px;
+            max-width: 450px;
             width: 90%;
             box-shadow: 0 4px 20px rgba(0,0,0,0.15);
         }
 
         .modal h3 {
+            margin-bottom: 8px;
+        }
+
+        .modal p {
+            color: #666;
+            font-size: 14px;
             margin-bottom: 16px;
         }
 
@@ -294,12 +333,57 @@
             color: #999;
             font-family: monospace;
         }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #1a1a1a;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            z-index: 2000;
+            animation: slideIn 0.3s ease;
+        }
+
+        .toast.error {
+            background: #dc2626;
+        }
+
+        .toast.success {
+            background: #059669;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.75s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>YouTube Digest Dashboard</h1>
-        <p class="subtitle">Manage your channel subscriptions and email digests</p>
+        <header>
+            <div>
+                <h1>YouTube Digest Dashboard</h1>
+                <p class="subtitle">Manage your channel subscriptions and email digests</p>
+            </div>
+            <button class="settings-btn" onclick="showSettingsModal()">Settings</button>
+        </header>
 
         <div id="content">
             <div class="loading">Loading subscriptions...</div>
@@ -308,14 +392,33 @@
         <p class="last-updated" id="lastUpdated"></p>
     </div>
 
-    <!-- Modal for adding items -->
+    <!-- Modal for inputs -->
     <div class="modal-overlay" id="modalOverlay">
         <div class="modal">
             <h3 id="modalTitle">Add Item</h3>
+            <p id="modalDescription"></p>
             <input type="text" id="modalInput" placeholder="">
             <div class="modal-actions">
                 <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                <button class="btn btn-primary" onclick="submitModal()">Add</button>
+                <button class="btn btn-primary" id="modalSubmitBtn" onclick="submitModal()">Add</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsOverlay">
+        <div class="modal">
+            <h3>Settings</h3>
+            <p>Enter a GitHub Personal Access Token with <code>repo</code> scope to enable direct editing.</p>
+            <input type="password" id="tokenInput" placeholder="ghp_xxxxxxxxxxxx">
+            <p style="font-size: 12px; color: #999;">
+                <a href="https://github.com/settings/tokens/new?description=YouTube%20Digest%20Dashboard&scopes=repo" target="_blank">Create a token</a>
+                - Token is stored locally in your browser only.
+            </p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
+                <button class="btn btn-danger" onclick="clearToken()" style="margin-right: auto;">Clear Token</button>
+                <button class="btn btn-primary" onclick="saveToken()">Save</button>
             </div>
         </div>
     </div>
@@ -323,54 +426,179 @@
     <script>
         const REPO_OWNER = 'rollinrhu-cell';
         const REPO_NAME = 'youtube-channel-digest';
-        const CONFIG_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/config.json`;
-        const ISSUES_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}/issues/new`;
+        const API_BASE = 'https://api.github.com';
 
+        let config = null;
+        let configSha = null;
         let currentModal = null;
+
+        // Token management
+        function getToken() {
+            return localStorage.getItem('github_token');
+        }
+
+        function showSettingsModal() {
+            document.getElementById('tokenInput').value = getToken() || '';
+            document.getElementById('settingsOverlay').classList.add('active');
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsOverlay').classList.remove('active');
+        }
+
+        function saveToken() {
+            const token = document.getElementById('tokenInput').value.trim();
+            if (token) {
+                localStorage.setItem('github_token', token);
+                showToast('Token saved!', 'success');
+                loadConfig();
+            }
+            closeSettings();
+        }
+
+        function clearToken() {
+            localStorage.removeItem('github_token');
+            showToast('Token cleared', 'success');
+            closeSettings();
+        }
+
+        // Toast notifications
+        function showToast(message, type = '') {
+            const existing = document.querySelector('.toast');
+            if (existing) existing.remove();
+
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // API helpers
+        async function apiRequest(endpoint, options = {}) {
+            const token = getToken();
+            const headers = {
+                'Accept': 'application/vnd.github.v3+json',
+                ...options.headers
+            };
+
+            if (token) {
+                headers['Authorization'] = `token ${token}`;
+            }
+
+            const response = await fetch(`${API_BASE}${endpoint}`, {
+                ...options,
+                headers
+            });
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.message || `HTTP ${response.status}`);
+            }
+
+            return response.json();
+        }
 
         async function loadConfig() {
             const content = document.getElementById('content');
 
             try {
-                const response = await fetch(CONFIG_URL + '?t=' + Date.now());
-                if (!response.ok) throw new Error('Failed to fetch config');
-
-                const config = await response.json();
-                renderDashboard(config);
+                // Use API to get file with SHA (needed for updates)
+                const data = await apiRequest(`/repos/${REPO_OWNER}/${REPO_NAME}/contents/config.json`);
+                configSha = data.sha;
+                config = JSON.parse(atob(data.content));
+                renderDashboard();
             } catch (error) {
-                content.innerHTML = `
-                    <div class="error">
-                        Failed to load subscriptions: ${error.message}
-                    </div>
-                    <div class="empty-state">
-                        <p>Make sure the repository is public or check the configuration.</p>
-                    </div>
-                `;
+                // Fallback to raw URL for read-only
+                try {
+                    const response = await fetch(`https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/config.json?t=${Date.now()}`);
+                    config = await response.json();
+                    configSha = null;
+                    renderDashboard();
+                } catch (e) {
+                    content.innerHTML = `
+                        <div class="error">
+                            Failed to load subscriptions: ${e.message}
+                        </div>
+                    `;
+                }
             }
         }
 
-        function renderDashboard(config) {
+        async function saveConfig() {
+            const token = getToken();
+            if (!token) {
+                showToast('Please set a GitHub token in Settings', 'error');
+                showSettingsModal();
+                return false;
+            }
+
+            try {
+                const content = btoa(JSON.stringify(config, null, 2) + '\n');
+                const data = await apiRequest(`/repos/${REPO_OWNER}/${REPO_NAME}/contents/config.json`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: 'Update config via dashboard',
+                        content: content,
+                        sha: configSha
+                    })
+                });
+                configSha = data.content.sha;
+                return true;
+            } catch (error) {
+                showToast(`Failed to save: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        async function triggerWorkflow() {
+            const token = getToken();
+            if (!token) {
+                showToast('Please set a GitHub token in Settings', 'error');
+                showSettingsModal();
+                return false;
+            }
+
+            try {
+                await apiRequest(`/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/digest.yml/dispatches`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ref: 'main' })
+                });
+                return true;
+            } catch (error) {
+                showToast(`Failed to trigger: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        function renderDashboard() {
             const content = document.getElementById('content');
             const digests = config.digests || [];
+            const hasToken = !!getToken();
 
             if (digests.length === 0) {
                 content.innerHTML = `
                     <div class="empty-state">
                         <p>No digests configured yet.</p>
-                        <p style="margin-top: 12px;">
-                            <a href="digest-config.html" class="btn btn-primary">Create Your First Digest</a>
-                        </p>
                     </div>
                 `;
                 return;
             }
 
-            // Calculate stats
             const totalDigests = digests.length;
             const totalSubscribers = digests.reduce((sum, d) => sum + (d.recipients?.length || 0), 0);
             const totalChannels = digests.reduce((sum, d) => sum + (d.channels?.length || 0), 0);
 
             let html = `
+                ${!hasToken ? `
+                    <div class="error" style="background: #fef3c7; color: #92400e;">
+                        <strong>Read-only mode.</strong>
+                        <a href="#" onclick="showSettingsModal(); return false;">Add a GitHub token</a> to enable editing.
+                    </div>
+                ` : ''}
                 <div class="stats">
                     <div class="stat-card">
                         <div class="stat-number">${totalDigests}</div>
@@ -387,17 +615,17 @@
                 </div>
             `;
 
-            for (const digest of digests) {
+            digests.forEach((digest, index) => {
                 const digestId = digest.id || digest.name;
                 const hasRecipients = digest.recipients && digest.recipients.length > 0;
                 const frequency = digest.frequency || 'daily';
 
                 html += `
-                    <div class="digest-card">
+                    <div class="digest-card" data-index="${index}">
                         <div class="digest-header">
                             <div>
-                                <span class="digest-name">${digest.name}</span>
-                                <div class="digest-id">${digestId}</div>
+                                <span class="digest-name">${escapeHtml(digest.name)}</span>
+                                <div class="digest-id">${escapeHtml(digestId)}</div>
                             </div>
                             <div class="digest-badges">
                                 <span class="digest-frequency ${frequency}">${frequency}</span>
@@ -406,27 +634,27 @@
                         <div class="digest-body">
                             <div class="section-title">
                                 Channels (${digest.channels?.length || 0})
-                                <span class="add-btn" onclick="showAddModal('channel', '${digestId}')">+ Add Channel</span>
+                                <span class="add-btn" onclick="showAddModal('channel', ${index})">+ Add Channel</span>
                             </div>
                             <ul class="channels-list">
-                                ${(digest.channels || []).map(ch => `
+                                ${(digest.channels || []).map((ch, i) => `
                                     <li>
-                                        <span class="item-content" data-icon="📺">${formatChannelUrl(ch)}</span>
-                                        <span class="remove-btn" onclick="removeItem('channel', '${digestId}', '${encodeURIComponent(ch)}')" title="Remove channel">×</span>
+                                        <span class="item-content" data-icon="📺">${escapeHtml(formatChannelUrl(ch))}</span>
+                                        <span class="remove-btn" onclick="removeChannel(${index}, ${i})" title="Remove channel">×</span>
                                     </li>
                                 `).join('')}
                             </ul>
 
                             <div class="section-title">
                                 Subscribers (${digest.recipients?.length || 0})
-                                <span class="add-btn" onclick="showAddModal('subscriber', '${digestId}')">+ Add Subscriber</span>
+                                <span class="add-btn" onclick="showAddModal('subscriber', ${index})">+ Add Subscriber</span>
                             </div>
                             ${hasRecipients ? `
                                 <ul class="recipients-list">
-                                    ${digest.recipients.map(r => `
+                                    ${digest.recipients.map((r, i) => `
                                         <li>
-                                            <span class="item-content" data-icon="📧">${r}</span>
-                                            <span class="remove-btn" onclick="removeItem('subscriber', '${digestId}', '${encodeURIComponent(r)}')" title="Unsubscribe">×</span>
+                                            <span class="item-content" data-icon="📧">${escapeHtml(r)}</span>
+                                            <span class="remove-btn" onclick="removeSubscriber(${index}, ${i})" title="Unsubscribe">×</span>
                                         </li>
                                     `).join('')}
                                 </ul>
@@ -435,25 +663,31 @@
                             `}
 
                             <div class="actions">
-                                <button class="btn btn-success" onclick="runDigest('${digestId}')">
+                                <button class="btn btn-success" onclick="runDigest(this)">
                                     ▶ Run Now
                                 </button>
                                 <a href="https://github.com/${REPO_OWNER}/${REPO_NAME}/actions"
                                    class="btn btn-secondary" target="_blank">
                                     View Runs
                                 </a>
-                                <button class="btn btn-danger" onclick="deleteDigest('${digestId}', '${digest.name}')">
+                                <button class="btn btn-danger" onclick="deleteDigest(${index}, '${escapeHtml(digest.name)}')">
                                     Delete Digest
                                 </button>
                             </div>
                         </div>
                     </div>
                 `;
-            }
+            });
 
             content.innerHTML = html;
             document.getElementById('lastUpdated').textContent =
                 `Last refreshed: ${new Date().toLocaleString()}`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         function formatChannelUrl(url) {
@@ -464,16 +698,21 @@
         }
 
         // Modal functions
-        function showAddModal(type, digestId) {
-            currentModal = { type, digestId };
+        function showAddModal(type, digestIndex) {
+            currentModal = { type, digestIndex };
             const title = type === 'channel' ? 'Add Channel' : 'Add Subscriber';
             const placeholder = type === 'channel'
                 ? 'https://youtube.com/@channelname'
                 : 'email@example.com';
+            const desc = type === 'channel'
+                ? 'Enter the YouTube channel URL'
+                : 'Enter the email address to subscribe';
 
             document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalDescription').textContent = desc;
             document.getElementById('modalInput').placeholder = placeholder;
             document.getElementById('modalInput').value = '';
+            document.getElementById('modalSubmitBtn').textContent = 'Add';
             document.getElementById('modalOverlay').classList.add('active');
             document.getElementById('modalInput').focus();
         }
@@ -483,78 +722,125 @@
             currentModal = null;
         }
 
-        function submitModal() {
+        async function submitModal() {
             const value = document.getElementById('modalInput').value.trim();
             if (!value || !currentModal) return;
 
-            const { type, digestId } = currentModal;
-            const action = type === 'channel' ? 'add-channel' : 'add-subscriber';
+            const { type, digestIndex } = currentModal;
+            const btn = document.getElementById('modalSubmitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>';
 
-            const body = `Action: ${action}
-Digest ID: ${digestId}
-Value: ${value}`;
-
-            const url = `${ISSUES_URL}?title=${encodeURIComponent(`Add ${type}: ${value}`)}&body=${encodeURIComponent(body)}&labels=manage`;
-            window.open(url, '_blank');
-            closeModal();
-        }
-
-        function removeItem(type, digestId, value) {
-            const decodedValue = decodeURIComponent(value);
-            const action = type === 'channel' ? 'remove-channel' : 'remove-subscriber';
-            const confirmMsg = type === 'channel'
-                ? `Remove channel "${formatChannelUrl(decodedValue)}" from this digest?`
-                : `Unsubscribe "${decodedValue}" from this digest?`;
-
-            if (!confirm(confirmMsg)) return;
-
-            const body = `Action: ${action}
-Digest ID: ${digestId}
-Value: ${decodedValue}`;
-
-            const url = `${ISSUES_URL}?title=${encodeURIComponent(`Remove ${type}`)}&body=${encodeURIComponent(body)}&labels=manage`;
-            window.open(url, '_blank');
-        }
-
-        function deleteDigest(digestId, digestName) {
-            if (!confirm(`Are you sure you want to delete "${digestName}"?\n\nThis will remove the digest and all its subscribers.`)) {
-                return;
+            if (type === 'channel') {
+                if (!config.digests[digestIndex].channels) {
+                    config.digests[digestIndex].channels = [];
+                }
+                config.digests[digestIndex].channels.push(value);
+            } else {
+                if (!config.digests[digestIndex].recipients) {
+                    config.digests[digestIndex].recipients = [];
+                }
+                config.digests[digestIndex].recipients.push(value);
             }
 
-            const body = `Action: delete-digest
-Digest ID: ${digestId}
+            if (await saveConfig()) {
+                showToast(`Added ${type}: ${value}`, 'success');
+                renderDashboard();
+                closeModal();
+            } else {
+                // Revert on failure
+                if (type === 'channel') {
+                    config.digests[digestIndex].channels.pop();
+                } else {
+                    config.digests[digestIndex].recipients.pop();
+                }
+            }
 
-This will permanently delete the digest and all associated data.`;
-
-            const url = `${ISSUES_URL}?title=${encodeURIComponent(`Delete digest: ${digestName}`)}&body=${encodeURIComponent(body)}&labels=manage`;
-            window.open(url, '_blank');
+            btn.disabled = false;
+            btn.textContent = 'Add';
         }
 
-        function runDigest(digestId) {
-            const body = `Action: run-digest
-Digest ID: ${digestId}
+        async function removeChannel(digestIndex, channelIndex) {
+            const channel = config.digests[digestIndex].channels[channelIndex];
+            if (!confirm(`Remove channel "${formatChannelUrl(channel)}"?`)) return;
 
-Trigger an immediate run of this digest.`;
+            const removed = config.digests[digestIndex].channels.splice(channelIndex, 1)[0];
 
-            const url = `${ISSUES_URL}?title=${encodeURIComponent(`Run digest: ${digestId}`)}&body=${encodeURIComponent(body)}&labels=manage`;
-            window.open(url, '_blank');
+            if (await saveConfig()) {
+                showToast('Channel removed', 'success');
+                renderDashboard();
+            } else {
+                config.digests[digestIndex].channels.splice(channelIndex, 0, removed);
+            }
         }
 
-        // Close modal on overlay click
+        async function removeSubscriber(digestIndex, subIndex) {
+            const email = config.digests[digestIndex].recipients[subIndex];
+            if (!confirm(`Unsubscribe "${email}"?`)) return;
+
+            const removed = config.digests[digestIndex].recipients.splice(subIndex, 1)[0];
+
+            if (await saveConfig()) {
+                showToast('Subscriber removed', 'success');
+                renderDashboard();
+            } else {
+                config.digests[digestIndex].recipients.splice(subIndex, 0, removed);
+            }
+        }
+
+        async function deleteDigest(digestIndex, digestName) {
+            if (!confirm(`Delete "${digestName}"?\n\nThis will remove the digest and all subscribers.`)) return;
+
+            const removed = config.digests.splice(digestIndex, 1)[0];
+
+            if (await saveConfig()) {
+                showToast('Digest deleted', 'success');
+                renderDashboard();
+            } else {
+                config.digests.splice(digestIndex, 0, removed);
+            }
+        }
+
+        async function runDigest(btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Running...';
+
+            if (await triggerWorkflow()) {
+                showToast('Digest triggered! Check Actions for progress.', 'success');
+            }
+
+            btn.disabled = false;
+            btn.innerHTML = '▶ Run Now';
+        }
+
+        // Event listeners
         document.getElementById('modalOverlay').addEventListener('click', (e) => {
             if (e.target === e.currentTarget) closeModal();
         });
 
-        // Close modal on Escape
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') closeModal();
+        document.getElementById('settingsOverlay').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeSettings();
         });
 
-        // Load on page load
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+                closeSettings();
+            }
+            if (e.key === 'Enter' && document.getElementById('modalOverlay').classList.contains('active')) {
+                submitModal();
+            }
+        });
+
+        // Initial load
         loadConfig();
 
-        // Auto-refresh every 60 seconds
-        setInterval(loadConfig, 60000);
+        // Auto-refresh every 60 seconds (only if not editing)
+        setInterval(() => {
+            if (!document.querySelector('.modal-overlay.active')) {
+                loadConfig();
+            }
+        }, 60000);
     </script>
 </body>
 </html>
