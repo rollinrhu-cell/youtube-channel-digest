@@ -1,16 +1,3 @@
 {
-  "digests": [
-    {
-      "id": "democratic-party-monitor",
-      "name": "Test Digest",
-      "recipients": [
-        "REDACTED"
-      ],
-      "channels": [
-        "https://www.youtube.com/@podsaveamerica",
-        "https://www.youtube.com/@WeeklyShowPodcast"
-      ],
-      "frequency": "weekly"
-    }
-  ]
+  "digests": []
 }
