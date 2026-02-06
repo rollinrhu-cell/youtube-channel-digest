@@ -599,12 +599,23 @@
             }
 
             try {
-                await apiRequest(`/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/digest.yml/dispatches`, {
+                const response = await fetch(`${API_BASE}/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/digest.yml/dispatches`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Authorization': `token ${token}`,
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({ ref: 'main' })
                 });
-                return true;
+
+                // 204 No Content = success for workflow dispatch
+                if (response.status === 204 || response.ok) {
+                    return true;
+                }
+
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.message || `HTTP ${response.status}`);
             } catch (error) {
                 showToast(`Failed to trigger: ${error.message}`, 'error');
                 return false;
