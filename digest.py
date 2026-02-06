@@ -286,34 +286,30 @@ def format_email_html(
         views = v.get("views", 0)
         views_str = f"{views:,}" if views else "N/A"
 
-        # Build details section
-        details_lines = []
+        # Build guest line
+        guest_line = ""
         if guests:
-            details_lines.append(f"<strong>Guests:</strong> {', '.join(guests)}")
+            guest_line = f'<p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Guest:</strong> {", ".join(guests)}</p>'
+
+        # Build topics line
+        topic_line = ""
         if topics:
-            details_lines.append(f"<strong>Topics:</strong> {', '.join(topics)}")
+            topic_line = f'<p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Topics:</strong> {", ".join(topics)}</p>'
 
+        # Build sentiment line
         sentiment_emoji = {"positive": "👍", "negative": "👎", "mixed": "🤔"}.get(sentiment, "")
+        sentiment_line = ""
         if sentiment and sentiment != "unknown":
-            details_lines.append(f"<strong>Sentiment:</strong> {sentiment} {sentiment_emoji}")
+            sentiment_line = f'<p style="margin: 0; font-size: 14px; color: #666;"><strong>Sentiment:</strong> {sentiment} {sentiment_emoji}</p>'
 
-        details_html = ""
-        if details_lines:
-            details_html = "<br>".join(details_lines)
-
-        videos_html += f"""
-        <div style="margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0;">
-            <h3 style="margin: 0 0 6px 0; font-size: 16px; line-height: 1.3;">
-                <a href="{v['url']}" style="color: #1a1a1a; text-decoration: none;">{v['title']}</a>
-            </h3>
-            <p style="margin: 0 0 10px 0; color: #666; font-size: 13px;">
-                {v['channel']} &bull; {views_str} views
-            </p>
-            <div style="font-size: 14px; color: #333; line-height: 1.6;">
-                {details_html}
-            </div>
-        </div>
-        """
+        videos_html += f"""<div style="margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid #eee;">
+<p style="margin: 0 0 4px 0; font-size: 16px; font-weight: bold;"><a href="{v['url']}" style="color: #1a1a1a; text-decoration: none;">{v['title']}</a></p>
+<p style="margin: 0 0 12px 0; color: #666; font-size: 13px;">{v['channel']} - {views_str} views</p>
+{guest_line}
+{topic_line}
+{sentiment_line}
+</div>
+"""
 
     html = f"""
     <!DOCTYPE html>
@@ -449,8 +445,8 @@ def run_digest(digest: dict, state: dict) -> bool:
             v["comment_count"] = details[v["id"]].get("comments", 0)
         v["sample_comments"] = get_video_comments(v["id"], max_comments=20)
 
-    # Filter out YouTube Shorts (videos under 60 seconds)
-    all_videos = [v for v in all_videos if not v.get("is_short", False)]
+    # Filter out YouTube Shorts (videos under 60 seconds OR with /shorts/ in URL)
+    all_videos = [v for v in all_videos if not v.get("is_short", False) and "/shorts/" not in v.get("url", "")]
 
     if not all_videos:
         print(f"  No new videos (excluding Shorts) found for {name}")
