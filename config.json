@@ -1,13 +1,3 @@
 {
-  "digests": [
-    {
-      "id": "democratic-party-monitor",
-      "name": "Democratic Party Monitor",
-      "recipients": [
-        "rollin.hu@nytimes.com"
-      ],
-      "channels": [],
-      "frequency": "biweekly"
-    }
-  ]
+  "digests": []
 }
