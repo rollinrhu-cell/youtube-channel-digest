@@ -1,0 +1,189 @@
+name: Manage Digest
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  manage:
+    if: contains(github.event.issue.labels.*.name, 'manage') || contains(github.event.issue.labels.*.name, 'unsubscribe') || contains(github.event.issue.title, 'Unsubscribe')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse request
+        id: parse
+        run: |
+          BODY="${{ github.event.issue.body }}"
+
+          # Extract action and parameters
+          ACTION=$(echo "$BODY" | grep -oP 'Action: \K[^\s]+' || echo "")
+          DIGEST_ID=$(echo "$BODY" | grep -oP 'Digest ID: \K[^\s]+' || echo "")
+          VALUE=$(echo "$BODY" | grep -oP 'Value: \K.+' || echo "")
+          EMAIL=$(echo "$BODY" | grep -oP 'Email: \K[^\s]+' || echo "")
+
+          # Handle legacy unsubscribe format
+          if [ -z "$ACTION" ] && echo "${{ github.event.issue.title }}" | grep -qi "unsubscribe"; then
+            ACTION="remove-subscriber"
+            VALUE="$EMAIL"
+          fi
+
+          echo "action=$ACTION" >> $GITHUB_OUTPUT
+          echo "digest_id=$DIGEST_ID" >> $GITHUB_OUTPUT
+          echo "value=$VALUE" >> $GITHUB_OUTPUT
+
+          if [ -z "$DIGEST_ID" ]; then
+            echo "valid=false" >> $GITHUB_OUTPUT
+          else
+            echo "valid=true" >> $GITHUB_OUTPUT
+          fi
+
+          echo "Parsed: action=$ACTION, digest_id=$DIGEST_ID, value=$VALUE"
+
+      - name: Process action
+        if: steps.parse.outputs.valid == 'true'
+        id: process
+        run: |
+          python3 << 'EOF'
+          import json
+          import os
+
+          action = "${{ steps.parse.outputs.action }}"
+          digest_id = "${{ steps.parse.outputs.digest_id }}"
+          value = """${{ steps.parse.outputs.value }}"""
+
+          with open("config.json", "r") as f:
+              config = json.load(f)
+
+          result = "No changes made"
+          modified = False
+
+          # Find the digest
+          digest_idx = None
+          for i, d in enumerate(config.get("digests", [])):
+              if d.get("id") == digest_id or d.get("name") == digest_id:
+                  digest_idx = i
+                  break
+
+          if digest_idx is None and action != "delete-digest":
+              result = f"Digest '{digest_id}' not found"
+          elif action == "delete-digest":
+              if digest_idx is not None:
+                  deleted = config["digests"].pop(digest_idx)
+                  result = f"Deleted digest: {deleted.get('name', digest_id)}"
+                  modified = True
+              else:
+                  result = f"Digest '{digest_id}' not found"
+
+          elif action == "add-channel":
+              if value and value not in config["digests"][digest_idx].get("channels", []):
+                  if "channels" not in config["digests"][digest_idx]:
+                      config["digests"][digest_idx]["channels"] = []
+                  config["digests"][digest_idx]["channels"].append(value)
+                  result = f"Added channel: {value}"
+                  modified = True
+              else:
+                  result = f"Channel already exists or invalid value"
+
+          elif action == "remove-channel":
+              channels = config["digests"][digest_idx].get("channels", [])
+              if value in channels:
+                  channels.remove(value)
+                  result = f"Removed channel: {value}"
+                  modified = True
+              else:
+                  result = f"Channel not found: {value}"
+
+          elif action in ["add-subscriber", "add-email"]:
+              if value and value not in config["digests"][digest_idx].get("recipients", []):
+                  if "recipients" not in config["digests"][digest_idx]:
+                      config["digests"][digest_idx]["recipients"] = []
+                  config["digests"][digest_idx]["recipients"].append(value)
+                  result = f"Added subscriber: {value}"
+                  modified = True
+              else:
+                  result = f"Subscriber already exists or invalid value"
+
+          elif action in ["remove-subscriber", "unsubscribe"]:
+              recipients = config["digests"][digest_idx].get("recipients", [])
+              if value in recipients:
+                  recipients.remove(value)
+                  result = f"Unsubscribed: {value}"
+                  modified = True
+              else:
+                  result = f"Subscriber not found: {value}"
+
+          elif action == "run-digest":
+              result = "TRIGGER_RUN"
+              # Don't modify config for run action
+
+          else:
+              result = f"Unknown action: {action}"
+
+          if modified:
+              with open("config.json", "w") as f:
+                  json.dump(config, f, indent=2)
+                  f.write("\n")
+
+          print(f"Result: {result}")
+          print(f"Modified: {modified}")
+
+          # Write outputs
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"result={result}\n")
+              f.write(f"modified={'true' if modified else 'false'}\n")
+              f.write(f"trigger_run={'true' if result == 'TRIGGER_RUN' else 'false'}\n")
+          EOF
+
+      - name: Commit changes
+        if: steps.parse.outputs.valid == 'true' && steps.process.outputs.modified == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add config.json
+          git diff --staged --quiet || git commit -m "${{ steps.process.outputs.result }}"
+          git push
+
+      - name: Trigger digest run
+        if: steps.parse.outputs.valid == 'true' && steps.process.outputs.trigger_run == 'true'
+        run: |
+          gh workflow run digest.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Close issue with comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const valid = '${{ steps.parse.outputs.valid }}' === 'true';
+            const result = `${{ steps.process.outputs.result }}`;
+            const action = '${{ steps.parse.outputs.action }}';
+            const triggerRun = '${{ steps.process.outputs.trigger_run }}' === 'true';
+
+            let body;
+            if (!valid) {
+              body = `Could not process request. Missing digest ID.\n\nPlease use the dashboard to manage digests.`;
+            } else if (triggerRun) {
+              body = `Triggered digest run for **${{ steps.parse.outputs.digest_id }}**.\n\nCheck the [Actions tab](https://github.com/${{ github.repository }}/actions) for progress.`;
+            } else {
+              body = `**${result}**\n\nThe dashboard will update shortly.`;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
+            });
