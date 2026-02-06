@@ -80,6 +80,12 @@
             font-weight: 600;
         }
 
+        .digest-badges {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
         .digest-frequency {
             font-size: 12px;
             text-transform: uppercase;
@@ -104,6 +110,21 @@
             letter-spacing: 1px;
             color: #666;
             margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .section-title .add-btn {
+            font-size: 11px;
+            color: #2563eb;
+            cursor: pointer;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .section-title .add-btn:hover {
+            text-decoration: underline;
         }
 
         .channels-list, .recipients-list {
@@ -119,20 +140,35 @@
             font-size: 14px;
             display: flex;
             align-items: center;
+            justify-content: space-between;
+        }
+
+        .item-content {
+            display: flex;
+            align-items: center;
             gap: 8px;
         }
 
-        .channels-list li::before {
-            content: "📺";
+        .item-content::before {
+            content: attr(data-icon);
         }
 
-        .recipients-list li::before {
-            content: "📧";
+        .remove-btn {
+            color: #999;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            padding: 0 4px;
+        }
+
+        .remove-btn:hover {
+            color: #dc2626;
         }
 
         .no-recipients {
             color: #dc2626;
             font-style: italic;
+            padding: 8px 0;
         }
 
         .actions {
@@ -141,6 +177,7 @@
             margin-top: 16px;
             padding-top: 16px;
             border-top: 1px solid #eee;
+            flex-wrap: wrap;
         }
 
         .btn {
@@ -150,6 +187,9 @@
             text-decoration: none;
             cursor: pointer;
             border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .btn-primary {
@@ -162,8 +202,18 @@
             color: #374151;
         }
 
+        .btn-danger {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+
+        .btn-success {
+            background: #ecfdf5;
+            color: #059669;
+        }
+
         .btn:hover {
-            opacity: 0.9;
+            opacity: 0.85;
         }
 
         .loading {
@@ -192,6 +242,58 @@
             font-size: 12px;
             margin-top: 32px;
         }
+
+        /* Modal styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .modal h3 {
+            margin-bottom: 16px;
+        }
+
+        .modal input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .digest-id {
+            font-size: 12px;
+            color: #999;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
@@ -206,10 +308,25 @@
         <p class="last-updated" id="lastUpdated"></p>
     </div>
 
+    <!-- Modal for adding items -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <h3 id="modalTitle">Add Item</h3>
+            <input type="text" id="modalInput" placeholder="">
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="submitModal()">Add</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const REPO_OWNER = 'rollinrhu-cell';
         const REPO_NAME = 'youtube-channel-digest';
         const CONFIG_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/config.json`;
+        const ISSUES_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}/issues/new`;
+
+        let currentModal = null;
 
         async function loadConfig() {
             const content = document.getElementById('content');
@@ -271,35 +388,63 @@
             `;
 
             for (const digest of digests) {
+                const digestId = digest.id || digest.name;
                 const hasRecipients = digest.recipients && digest.recipients.length > 0;
                 const frequency = digest.frequency || 'daily';
 
                 html += `
                     <div class="digest-card">
                         <div class="digest-header">
-                            <span class="digest-name">${digest.name}</span>
-                            <span class="digest-frequency ${frequency}">${frequency}</span>
+                            <div>
+                                <span class="digest-name">${digest.name}</span>
+                                <div class="digest-id">${digestId}</div>
+                            </div>
+                            <div class="digest-badges">
+                                <span class="digest-frequency ${frequency}">${frequency}</span>
+                            </div>
                         </div>
                         <div class="digest-body">
-                            <div class="section-title">Channels (${digest.channels?.length || 0})</div>
+                            <div class="section-title">
+                                Channels (${digest.channels?.length || 0})
+                                <span class="add-btn" onclick="showAddModal('channel', '${digestId}')">+ Add Channel</span>
+                            </div>
                             <ul class="channels-list">
-                                ${(digest.channels || []).map(ch => `<li>${formatChannelUrl(ch)}</li>`).join('')}
+                                ${(digest.channels || []).map(ch => `
+                                    <li>
+                                        <span class="item-content" data-icon="📺">${formatChannelUrl(ch)}</span>
+                                        <span class="remove-btn" onclick="removeItem('channel', '${digestId}', '${encodeURIComponent(ch)}')" title="Remove channel">×</span>
+                                    </li>
+                                `).join('')}
                             </ul>
 
-                            <div class="section-title">Subscribers (${digest.recipients?.length || 0})</div>
+                            <div class="section-title">
+                                Subscribers (${digest.recipients?.length || 0})
+                                <span class="add-btn" onclick="showAddModal('subscriber', '${digestId}')">+ Add Subscriber</span>
+                            </div>
                             ${hasRecipients ? `
                                 <ul class="recipients-list">
-                                    ${digest.recipients.map(r => `<li>${r}</li>`).join('')}
+                                    ${digest.recipients.map(r => `
+                                        <li>
+                                            <span class="item-content" data-icon="📧">${r}</span>
+                                            <span class="remove-btn" onclick="removeItem('subscriber', '${digestId}', '${encodeURIComponent(r)}')" title="Unsubscribe">×</span>
+                                        </li>
+                                    `).join('')}
                                 </ul>
                             ` : `
                                 <p class="no-recipients">No subscribers - this digest is paused</p>
                             `}
 
                             <div class="actions">
-                                <a href="https://github.com/${REPO_OWNER}/${REPO_NAME}/edit/main/config.json"
-                                   class="btn btn-secondary" target="_blank">Edit Config</a>
+                                <button class="btn btn-success" onclick="runDigest('${digestId}')">
+                                    ▶ Run Now
+                                </button>
                                 <a href="https://github.com/${REPO_OWNER}/${REPO_NAME}/actions"
-                                   class="btn btn-secondary" target="_blank">View Runs</a>
+                                   class="btn btn-secondary" target="_blank">
+                                    View Runs
+                                </a>
+                                <button class="btn btn-danger" onclick="deleteDigest('${digestId}', '${digest.name}')">
+                                    Delete Digest
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -312,12 +457,98 @@
         }
 
         function formatChannelUrl(url) {
-            // Extract channel name or ID from URL
             const match = url.match(/youtube\.com\/@([^\/]+)/) ||
                           url.match(/youtube\.com\/channel\/([^\/]+)/) ||
                           url.match(/youtube\.com\/c\/([^\/]+)/);
             return match ? match[1] : url;
         }
+
+        // Modal functions
+        function showAddModal(type, digestId) {
+            currentModal = { type, digestId };
+            const title = type === 'channel' ? 'Add Channel' : 'Add Subscriber';
+            const placeholder = type === 'channel'
+                ? 'https://youtube.com/@channelname'
+                : 'email@example.com';
+
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalInput').placeholder = placeholder;
+            document.getElementById('modalInput').value = '';
+            document.getElementById('modalOverlay').classList.add('active');
+            document.getElementById('modalInput').focus();
+        }
+
+        function closeModal() {
+            document.getElementById('modalOverlay').classList.remove('active');
+            currentModal = null;
+        }
+
+        function submitModal() {
+            const value = document.getElementById('modalInput').value.trim();
+            if (!value || !currentModal) return;
+
+            const { type, digestId } = currentModal;
+            const action = type === 'channel' ? 'add-channel' : 'add-subscriber';
+
+            const body = `Action: ${action}
+Digest ID: ${digestId}
+Value: ${value}`;
+
+            const url = `${ISSUES_URL}?title=${encodeURIComponent(`Add ${type}: ${value}`)}&body=${encodeURIComponent(body)}&labels=manage`;
+            window.open(url, '_blank');
+            closeModal();
+        }
+
+        function removeItem(type, digestId, value) {
+            const decodedValue = decodeURIComponent(value);
+            const action = type === 'channel' ? 'remove-channel' : 'remove-subscriber';
+            const confirmMsg = type === 'channel'
+                ? `Remove channel "${formatChannelUrl(decodedValue)}" from this digest?`
+                : `Unsubscribe "${decodedValue}" from this digest?`;
+
+            if (!confirm(confirmMsg)) return;
+
+            const body = `Action: ${action}
+Digest ID: ${digestId}
+Value: ${decodedValue}`;
+
+            const url = `${ISSUES_URL}?title=${encodeURIComponent(`Remove ${type}`)}&body=${encodeURIComponent(body)}&labels=manage`;
+            window.open(url, '_blank');
+        }
+
+        function deleteDigest(digestId, digestName) {
+            if (!confirm(`Are you sure you want to delete "${digestName}"?\n\nThis will remove the digest and all its subscribers.`)) {
+                return;
+            }
+
+            const body = `Action: delete-digest
+Digest ID: ${digestId}
+
+This will permanently delete the digest and all associated data.`;
+
+            const url = `${ISSUES_URL}?title=${encodeURIComponent(`Delete digest: ${digestName}`)}&body=${encodeURIComponent(body)}&labels=manage`;
+            window.open(url, '_blank');
+        }
+
+        function runDigest(digestId) {
+            const body = `Action: run-digest
+Digest ID: ${digestId}
+
+Trigger an immediate run of this digest.`;
+
+            const url = `${ISSUES_URL}?title=${encodeURIComponent(`Run digest: ${digestId}`)}&body=${encodeURIComponent(body)}&labels=manage`;
+            window.open(url, '_blank');
+        }
+
+        // Close modal on overlay click
+        document.getElementById('modalOverlay').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeModal();
+        });
+
+        // Close modal on Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
 
         // Load on page load
         loadConfig();
