@@ -104,6 +104,20 @@ def get_channel_feed(channel_id: str) -> list[dict]:
     return videos
 
 
+def _is_short_video(duration_str: str) -> bool:
+    """Check if video is a Short (under 60 seconds). Duration is ISO 8601 format like PT1M30S."""
+    import re
+    # Parse ISO 8601 duration (e.g., PT1H2M30S, PT5M, PT30S)
+    match = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', duration_str)
+    if not match:
+        return False
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    seconds = int(match.group(3) or 0)
+    total_seconds = hours * 3600 + minutes * 60 + seconds
+    return total_seconds < 60
+
+
 def get_video_details(video_ids: list[str]) -> dict[str, dict]:
     """Get detailed video info via YouTube Data API."""
     if not YOUTUBE_API_KEY or not video_ids:
@@ -126,12 +140,20 @@ def get_video_details(video_ids: list[str]) -> dict[str, dict]:
                 vid = item["id"]
                 stats = item.get("statistics", {})
                 snippet = item.get("snippet", {})
+                content = item.get("contentDetails", {})
+
+                # Parse duration to check for Shorts (under 60 seconds)
+                duration_str = content.get("duration", "PT0S")  # ISO 8601 format
+                is_short = _is_short_video(duration_str)
+
                 details[vid] = {
                     "views": int(stats.get("viewCount", 0)),
                     "likes": int(stats.get("likeCount", 0)),
                     "comments": int(stats.get("commentCount", 0)),
                     "description": snippet.get("description", ""),
                     "tags": snippet.get("tags", []),
+                    "is_short": is_short,
+                    "duration": duration_str,
                 }
         except Exception as e:
             print(f"Error fetching video details: {e}")
@@ -206,18 +228,22 @@ Write a concise, insightful paragraph about the themes. Be specific about topics
     # Analyze each video
     video_analyses = {}
     for v in videos:
-        video_prompt = f"""Analyze this YouTube video and extract:
-1. Guest name(s) if any (look in title, description)
-2. Main topics discussed (2-3 bullet points)
-3. Comment sentiment (positive/negative/mixed) based on sample comments
+        video_prompt = f"""Analyze this YouTube podcast/video and extract information.
 
-Video: {v['title']}
+Title: {v['title']}
 Channel: {v['channel']}
-Description: {v.get('description', '')[:1000]}
+Description: {v.get('description', '')[:1500]}
 Sample comments: {'; '.join(v.get('sample_comments', [])[:10])}
 
-Respond in this exact JSON format:
-{{"guests": ["name1", "name2"] or [], "topics": ["topic1", "topic2"], "sentiment": "positive/negative/mixed"}}"""
+Extract:
+1. GUESTS: Look for guest names in the title (often after "with" or before "|") and in the description. For podcasts, the title often contains the guest name. Return full names.
+2. TOPICS: What are the 2-3 main topics or themes discussed? Be specific.
+3. SENTIMENT: Based on the comments, is the overall reaction positive, negative, or mixed?
+
+You MUST respond with ONLY valid JSON in this exact format, no other text:
+{{"guests": ["Full Name 1", "Full Name 2"], "topics": ["specific topic 1", "specific topic 2"], "sentiment": "positive"}}
+
+If no guests, use empty array: "guests": []"""
 
         try:
             response = client.models.generate_content(
@@ -415,6 +441,15 @@ def run_digest(digest: dict, state: dict) -> bool:
             v.update(details[v["id"]])
             v["comment_count"] = details[v["id"]].get("comments", 0)
         v["sample_comments"] = get_video_comments(v["id"], max_comments=20)
+
+    # Filter out YouTube Shorts (videos under 60 seconds)
+    all_videos = [v for v in all_videos if not v.get("is_short", False)]
+
+    if not all_videos:
+        print(f"  No new videos (excluding Shorts) found for {name}")
+        return False
+
+    print(f"  {len(all_videos)} videos after filtering Shorts")
 
     # Analyze with Gemini
     print("  Analyzing with Gemini...")
