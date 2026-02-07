@@ -509,6 +509,12 @@ def run_digest(digest: dict, state: dict) -> bool:
 
 def main():
     """Main entry point."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="YouTube Channel Email Digest")
+    parser.add_argument("--digest", "-d", help="Run only this specific digest (by ID or name)")
+    args = parser.parse_args()
+
     config = load_config()
     state = load_state()
 
@@ -517,12 +523,19 @@ def main():
         return
 
     for digest in config["digests"]:
+        digest_id = digest.get("id", digest["name"])
+
+        # If a specific digest was requested, skip others
+        if args.digest and args.digest != digest_id and args.digest != digest["name"]:
+            continue
+
         # Skip digests with no recipients
         if not digest.get("recipients"):
             print(f"Skipping {digest['name']} (no recipients)")
             continue
 
-        if should_run_digest(digest, state):
+        # When running a specific digest, always run it (ignore schedule)
+        if args.digest or should_run_digest(digest, state):
             run_digest(digest, state)
         else:
             print(f"Skipping {digest['name']} (not scheduled)")
