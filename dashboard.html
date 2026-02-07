@@ -38,6 +38,9 @@
 
         .subtitle {
             color: #666;
+            max-width: 500px;
+            line-height: 1.5;
+            font-size: 14px;
         }
 
         .settings-btn {
@@ -638,19 +641,13 @@
         <header>
             <div>
                 <h1>YouTube Digest Dashboard</h1>
-                <p class="subtitle">Manage your channel subscriptions and email digests</p>
+                <p class="subtitle">Automatically monitors your favorite YouTube channels and sends email summaries with AI-powered analysis—including new uploads, identified guests, discussion topics, and viewer sentiment.</p>
             </div>
             <div style="display: flex; gap: 8px;">
                 <button class="btn btn-primary" onclick="showCreateModal()">+ New Digest</button>
                 <button class="settings-btn" onclick="showSettingsModal()">Settings</button>
             </div>
         </header>
-
-        <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-            <p style="margin: 0; color: #374151; font-size: 15px; line-height: 1.6;">
-                <strong>YouTube Channel Digest</strong> automatically monitors your favorite YouTube channels and sends you email summaries with AI-powered analysis. Each digest includes new uploads, identified guests, discussion topics, and viewer sentiment—delivered on your preferred schedule.
-            </p>
-        </div>
 
         <div id="content">
             <div class="loading">Loading subscriptions...</div>
