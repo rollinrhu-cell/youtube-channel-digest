@@ -14,17 +14,16 @@ from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Any
 
+import anthropic
 import feedparser
 import requests
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
 
 load_dotenv()
 
 # Constants
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 
@@ -186,53 +185,25 @@ def get_video_comments(video_id: str, max_comments: int = 50) -> list[str]:
         return []
 
 
-def _call_gemini_with_retry(client, model: str, prompt: str, temperature: float = 0.3, max_retries: int = 2):
-    """Call Gemini API with retry logic for rate limits."""
-    import time
-    import re
-
-    for attempt in range(max_retries):
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=prompt,
-                config=types.GenerateContentConfig(temperature=temperature),
-            )
-            return response.text.strip()
-        except Exception as e:
-            error_str = str(e)
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                # Try to extract retry delay from error message
-                retry_match = re.search(r'retry in (\d+)', error_str.lower())
-                if retry_match:
-                    wait_time = int(retry_match.group(1)) + 5
-                else:
-                    wait_time = (attempt + 1) * 30  # 30s, 60s
-                print(f"    Rate limited on {model}, waiting {wait_time}s...")
-                time.sleep(wait_time)
-            else:
-                raise e
-    return None
-
-
-def analyze_with_gemini(videos: list[dict], digest_name: str) -> dict:
-    """Use Gemini to analyze videos and extract insights."""
-    if not GEMINI_API_KEY:
+def analyze_with_claude(videos: list[dict], digest_name: str) -> dict:
+    """Use Claude to analyze videos and extract insights."""
+    if not ANTHROPIC_API_KEY:
         return {"themes": "AI analysis unavailable (no API key)", "video_analyses": {}}
 
-    client = genai.Client(api_key=GEMINI_API_KEY)
-
-    # Try different models if one is rate-limited (different models have separate quotas)
-    models_to_try = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
     # Prepare video summaries for analysis
     video_summaries = []
     for v in videos:
+        views = v.get('views', 0)
+        likes = v.get('likes', 0)
+        views_str = f"{views:,}" if isinstance(views, int) else str(views)
+        likes_str = f"{likes:,}" if isinstance(likes, int) else str(likes)
         summary = f"""
 Video: {v['title']}
 Channel: {v['channel']}
-Views: {v.get('views', 'N/A'):,}
-Likes: {v.get('likes', 'N/A'):,}
+Views: {views_str}
+Likes: {likes_str}
 Comments count: {v.get('comment_count', 'N/A')}
 Description excerpt: {v.get('description', '')[:500]}
 Sample comments: {'; '.join(v.get('sample_comments', [])[:5])}
@@ -248,17 +219,15 @@ Videos:
 Write a concise, insightful paragraph about the themes. Be specific about topics discussed."""
 
     themes = None
-    for model in models_to_try:
-        try:
-            result = _call_gemini_with_retry(client, model, themes_prompt, temperature=0.3)
-            if result:
-                themes = result
-                break
-        except Exception as e:
-            print(f"    Model {model} failed: {e}")
-            continue
-
-    if not themes:
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=500,
+            messages=[{"role": "user", "content": themes_prompt}]
+        )
+        themes = response.content[0].text.strip()
+    except Exception as e:
+        print(f"    Theme analysis failed: {e}")
         themes = "Theme analysis unavailable"
 
     # Analyze each video
@@ -282,17 +251,19 @@ You MUST respond with ONLY valid JSON in this exact format, no other text:
 If no guests, use empty array: "guests": []"""
 
         parsed = None
-        for model in models_to_try:
-            try:
-                text = _call_gemini_with_retry(client, model, video_prompt, temperature=0.1)
-                if text:
-                    # Find JSON in response
-                    json_match = re.search(r'\{[^{}]+\}', text)
-                    if json_match:
-                        parsed = json.loads(json_match.group())
-                        break
-            except Exception:
-                continue
+        try:
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=200,
+                messages=[{"role": "user", "content": video_prompt}]
+            )
+            text = response.content[0].text.strip()
+            # Find JSON in response
+            json_match = re.search(r'\{[^{}]+\}', text)
+            if json_match:
+                parsed = json.loads(json_match.group())
+        except Exception as e:
+            print(f"    Video analysis failed for {v['title']}: {e}")
 
         video_analyses[v['id']] = parsed or {"guests": [], "topics": [], "sentiment": "unknown"}
 
@@ -506,9 +477,9 @@ def run_digest(digest: dict, state: dict) -> bool:
 
     print(f"  {len(all_videos)} videos after filtering Shorts")
 
-    # Analyze with Gemini
-    print("  Analyzing with Gemini...")
-    analysis = analyze_with_gemini(all_videos, name)
+    # Analyze with Claude
+    print("  Analyzing with Claude...")
+    analysis = analyze_with_claude(all_videos, name)
 
     # Format and send email to each recipient (personalized unsubscribe links)
     subject = f"{name} - {start_date.strftime('%B %d')} to {end_date.strftime('%B %d, %Y')}"

@@ -1170,8 +1170,16 @@
             }
 
             const totalDigests = digests.length;
-            const totalSubscribers = digests.reduce((sum, d) => sum + (d.recipients?.length || 0), 0);
             const totalChannels = digests.reduce((sum, d) => sum + (d.channels?.length || 0), 0);
+
+            // Calculate emails per week based on digest frequencies
+            const emailsPerWeek = digests.reduce((sum, d) => {
+                const recipients = d.recipients?.length || 0;
+                const freq = d.frequency || 'daily';
+                // daily=7/week, biweekly=2/week, weekly=1/week
+                const multiplier = freq === 'daily' ? 7 : freq === 'biweekly' ? 2 : 1;
+                return sum + (recipients * multiplier);
+            }, 0);
 
             let html = `
                 ${!hasToken ? `
@@ -1186,8 +1194,8 @@
                         <div class="stat-label">Active Digests</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-number">${totalSubscribers}</div>
-                        <div class="stat-label">Subscribers</div>
+                        <div class="stat-number">${emailsPerWeek}</div>
+                        <div class="stat-label">Emails / Week</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-number">${totalChannels}</div>
