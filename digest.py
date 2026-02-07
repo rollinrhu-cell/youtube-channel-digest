@@ -186,9 +186,10 @@ def get_video_comments(video_id: str, max_comments: int = 50) -> list[str]:
         return []
 
 
-def _call_gemini_with_retry(client, model: str, prompt: str, temperature: float = 0.3, max_retries: int = 3):
+def _call_gemini_with_retry(client, model: str, prompt: str, temperature: float = 0.3, max_retries: int = 2):
     """Call Gemini API with retry logic for rate limits."""
     import time
+    import re
 
     for attempt in range(max_retries):
         try:
@@ -201,8 +202,13 @@ def _call_gemini_with_retry(client, model: str, prompt: str, temperature: float 
         except Exception as e:
             error_str = str(e)
             if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                wait_time = (attempt + 1) * 15  # 15s, 30s, 45s
-                print(f"    Rate limited, waiting {wait_time}s...")
+                # Try to extract retry delay from error message
+                retry_match = re.search(r'retry in (\d+)', error_str.lower())
+                if retry_match:
+                    wait_time = int(retry_match.group(1)) + 5
+                else:
+                    wait_time = (attempt + 1) * 30  # 30s, 60s
+                print(f"    Rate limited on {model}, waiting {wait_time}s...")
                 time.sleep(wait_time)
             else:
                 raise e
@@ -216,8 +222,8 @@ def analyze_with_gemini(videos: list[dict], digest_name: str) -> dict:
 
     client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # Try different models if one is rate-limited
-    models_to_try = ["gemini-2.0-flash-lite", "gemini-flash-lite-latest", "gemini-2.0-flash"]
+    # Try different models if one is rate-limited (different models have separate quotas)
+    models_to_try = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
 
     # Prepare video summaries for analysis
     video_summaries = []
