@@ -316,7 +316,13 @@ def format_email_html(
         if sentiment and sentiment != "unknown":
             sentiment_line = f'<p style="margin: 0; font-size: 14px; color: #666;"><strong>Sentiment:</strong> {sentiment} {sentiment_emoji}</p>'
 
+        # YouTube thumbnail URL
+        thumbnail_url = f"https://img.youtube.com/vi/{v['id']}/mqdefault.jpg"
+
         videos_html += f"""<div style="margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid #eee;">
+<a href="{v['url']}" style="display: block; margin-bottom: 12px;">
+    <img src="{thumbnail_url}" alt="{v['title']}" style="width: 100%; max-width: 320px; height: auto; border-radius: 8px;">
+</a>
 <p style="margin: 0 0 4px 0; font-size: 16px; font-weight: bold;"><a href="{v['url']}" style="color: #1a1a1a; text-decoration: none;">{v['title']}</a></p>
 <p style="margin: 0 0 12px 0; color: #666; font-size: 13px;">{v['channel']} - {views_str} views</p>
 {guest_line}
