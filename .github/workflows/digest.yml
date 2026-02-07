@@ -4,7 +4,12 @@ on:
   schedule:
     # Run at 7am ET (12:00 UTC during EST, 11:00 UTC during EDT)
     - cron: '0 12 * * *'
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      digest_id:
+        description: 'Specific digest ID to run (leave empty for all scheduled digests)'
+        required: false
+        default: ''
 
 jobs:
   send-digest:
@@ -27,7 +32,12 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-        run: python digest.py
+        run: |
+          if [ -n "${{ github.event.inputs.digest_id }}" ]; then
+            python digest.py --digest "${{ github.event.inputs.digest_id }}"
+          else
+            python digest.py
+          fi
 
       - name: Commit state changes
         run: |

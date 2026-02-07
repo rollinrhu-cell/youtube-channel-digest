@@ -1123,7 +1123,7 @@
             }
         }
 
-        async function triggerWorkflow() {
+        async function triggerWorkflow(digestId = '') {
             const token = getToken();
             if (!token) {
                 showToast('Please set a GitHub token in Settings', 'error');
@@ -1132,6 +1132,14 @@
             }
 
             try {
+                const body = {
+                    ref: 'main',
+                    inputs: {}
+                };
+                if (digestId) {
+                    body.inputs.digest_id = digestId;
+                }
+
                 const response = await fetch(`${API_BASE}/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/digest.yml/dispatches`, {
                     method: 'POST',
                     headers: {
@@ -1139,7 +1147,7 @@
                         'Authorization': `token ${token}`,
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ ref: 'main' })
+                    body: JSON.stringify(body)
                 });
 
                 // 204 No Content = success for workflow dispatch
@@ -1275,7 +1283,7 @@
                             `}
 
                             <div class="actions">
-                                <button class="btn btn-success" onclick="runDigest(this)">
+                                <button class="btn btn-success" onclick="runDigest(this, '${escapeHtml(digestId)}')">
                                     ▶ Run Now
                                 </button>
                                 <a href="https://github.com/${REPO_OWNER}/${REPO_NAME}/actions"
@@ -1443,11 +1451,11 @@
             }
         }
 
-        async function runDigest(btn) {
+        async function runDigest(btn, digestId) {
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span> Running...';
 
-            if (await triggerWorkflow()) {
+            if (await triggerWorkflow(digestId)) {
                 showToast('Digest triggered! Check Actions for progress.', 'success');
             }
 
