@@ -228,6 +228,14 @@
             fill: white;
         }
 
+        .channel-thumb {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            flex-shrink: 0;
+        }
+
         .channel-info {
             flex: 1;
             min-width: 0;
@@ -740,6 +748,7 @@
         let config = null;
         let configSha = null;
         let currentModal = null;
+        let channelNames = JSON.parse(localStorage.getItem('channel_names_cache') || '{}');
 
         // Token management
         function getToken() {
@@ -1001,6 +1010,59 @@
             return response.json();
         }
 
+        async function fetchChannelNames(channelUrls) {
+            const apiKey = getYouTubeKey();
+            if (!apiKey) return;
+
+            // Extract channel IDs that we don't have names for
+            const idsToFetch = [];
+            for (const url of channelUrls) {
+                const match = url.match(/\/channel\/([^\/\?]+)/);
+                if (match && !channelNames[match[1]]) {
+                    idsToFetch.push(match[1]);
+                }
+            }
+
+            if (idsToFetch.length === 0) return;
+
+            try {
+                const response = await fetch(
+                    `https://www.googleapis.com/youtube/v3/channels?part=snippet&id=${idsToFetch.join(',')}&key=${apiKey}`
+                );
+                const data = await response.json();
+
+                if (data.items) {
+                    for (const item of data.items) {
+                        channelNames[item.id] = {
+                            name: item.snippet.title,
+                            thumbnail: item.snippet.thumbnails.default.url
+                        };
+                    }
+                    localStorage.setItem('channel_names_cache', JSON.stringify(channelNames));
+                }
+            } catch (e) {
+                console.error('Failed to fetch channel names:', e);
+            }
+        }
+
+        function getChannelDisplayName(url) {
+            // Try to get cached name first
+            const match = url.match(/\/channel\/([^\/\?]+)/);
+            if (match && channelNames[match[1]]) {
+                return channelNames[match[1]].name;
+            }
+            // Fallback to extracting from URL
+            return formatChannelUrl(url);
+        }
+
+        function getChannelThumbnail(url) {
+            const match = url.match(/\/channel\/([^\/\?]+)/);
+            if (match && channelNames[match[1]]) {
+                return channelNames[match[1]].thumbnail;
+            }
+            return null;
+        }
+
         async function loadConfig() {
             const content = document.getElementById('content');
 
@@ -1009,6 +1071,11 @@
                 const data = await apiRequest(`/repos/${REPO_OWNER}/${REPO_NAME}/contents/config.json`);
                 configSha = data.sha;
                 config = JSON.parse(atob(data.content));
+
+                // Fetch channel names in background
+                const allChannels = config.digests?.flatMap(d => d.channels || []) || [];
+                fetchChannelNames(allChannels).then(() => renderDashboard());
+
                 renderDashboard();
             } catch (error) {
                 // Fallback to raw URL for read-only
@@ -1016,6 +1083,11 @@
                     const response = await fetch(`https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/config.json?t=${Date.now()}`);
                     config = await response.json();
                     configSha = null;
+
+                    // Fetch channel names in background
+                    const allChannels = config.digests?.flatMap(d => d.channels || []) || [];
+                    fetchChannelNames(allChannels).then(() => renderDashboard());
+
                     renderDashboard();
                 } catch (e) {
                     content.innerHTML = `
@@ -1155,20 +1227,26 @@
                             </div>
                             ${hasChannels ? `
                                 <div class="channels-list">
-                                    ${digest.channels.map((ch, i) => `
+                                    ${digest.channels.map((ch, i) => {
+                                        const thumb = getChannelThumbnail(ch);
+                                        const displayName = getChannelDisplayName(ch);
+                                        return `
                                         <div class="channel-card">
-                                            <div class="channel-icon">
-                                                <svg viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-                                            </div>
+                                            ${thumb ? `
+                                                <img src="${thumb}" class="channel-thumb" alt="">
+                                            ` : `
+                                                <div class="channel-icon">
+                                                    <svg viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                                                </div>
+                                            `}
                                             <div class="channel-info">
                                                 <div class="channel-name">
-                                                    <a href="${escapeHtml(ch)}" target="_blank">${escapeHtml(formatChannelUrl(ch))}</a>
+                                                    <a href="${escapeHtml(ch)}" target="_blank">${escapeHtml(displayName)}</a>
                                                 </div>
-                                                <div class="channel-url">${escapeHtml(ch.replace('https://www.youtube.com/', ''))}</div>
                                             </div>
                                             <span class="channel-remove" onclick="removeChannel(${index}, ${i})" title="Remove channel">×</span>
                                         </div>
-                                    `).join('')}
+                                    `}).join('')}
                                 </div>
                             ` : `
                                 <p style="color: #999; font-size: 13px; font-style: italic; margin-bottom: 16px;">No channels added yet</p>
