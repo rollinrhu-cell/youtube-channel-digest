@@ -492,12 +492,6 @@
             justify-content: flex-end;
         }
 
-        .digest-id {
-            font-size: 12px;
-            color: #999;
-            font-family: monospace;
-        }
-
         .toast {
             position: fixed;
             bottom: 20px;
@@ -693,10 +687,6 @@
                 <div class="channel-search-container">
                     <input type="text" id="modalChannelSearch" placeholder="Search YouTube or paste channel URL" onkeyup="handleModalChannelSearch(event)">
                     <div id="modalSearchResults" class="search-results"></div>
-                </div>
-                <div id="suggestionsSection" style="margin-top: 16px;">
-                    <p class="form-label">Suggested Channels</p>
-                    <div id="channelSuggestions" style="display: flex; flex-direction: column; gap: 8px;"></div>
                 </div>
             </div>
             <div id="emailInputSection">
@@ -1448,7 +1438,6 @@
                         <div class="digest-header">
                             <div>
                                 <span class="digest-name editable" onclick="editName(${index})" title="Click to rename">${escapeHtml(digest.name)}</span>
-                                <div class="digest-id">${escapeHtml(digestId)}</div>
                             </div>
                             <div class="digest-badges">
                                 <select class="frequency-select ${frequency}" onchange="changeFrequency(${index}, this.value)">
@@ -1565,9 +1554,6 @@
                 document.getElementById('modalSearchResults').innerHTML = '';
                 document.getElementById('modalSearchResults').classList.remove('active');
                 document.getElementById('modalSubmitBtn').style.display = 'none';
-
-                // Fetch suggestions based on existing channels
-                fetchChannelSuggestions(digestIndex);
             } else {
                 document.getElementById('channelSearchSection').style.display = 'none';
                 document.getElementById('emailInputSection').style.display = 'block';
@@ -1676,149 +1662,6 @@
                 closeModal();
             } else {
                 config.digests[digestIndex].channels.pop();
-            }
-        }
-
-        async function fetchChannelSuggestions(digestIndex) {
-            const suggestionsDiv = document.getElementById('channelSuggestions');
-            const apiKey = getYouTubeKey();
-            const existingChannels = config.digests[digestIndex].channels || [];
-
-            if (!apiKey) {
-                suggestionsDiv.innerHTML = '<p style="color: #999; font-size: 13px;">Add YouTube API key in Settings to see suggestions</p>';
-                return;
-            }
-
-            if (existingChannels.length === 0) {
-                suggestionsDiv.innerHTML = '<p style="color: #999; font-size: 13px;">Add your first channel to get suggestions</p>';
-                return;
-            }
-
-            suggestionsDiv.innerHTML = '<div class="search-loading"><span class="spinner"></span> Finding similar channels...</div>';
-
-            try {
-                // Get channel IDs from ALL existing channels
-                const channelIds = existingChannels
-                    .map(url => {
-                        const match = url.match(/\/channel\/([^\/\?]+)/);
-                        return match ? match[1] : null;
-                    })
-                    .filter(Boolean);
-
-                if (channelIds.length === 0) {
-                    suggestionsDiv.innerHTML = '<p style="color: #999; font-size: 13px;">No suggestions available</p>';
-                    return;
-                }
-
-                // Get info about ALL existing channels (up to 50, API limit)
-                const channelResponse = await fetch(
-                    `https://www.googleapis.com/youtube/v3/channels?part=snippet,topicDetails&id=${channelIds.slice(0, 50).join(',')}&key=${apiKey}`
-                );
-                const channelData = await channelResponse.json();
-
-                if (!channelData.items || channelData.items.length === 0) {
-                    suggestionsDiv.innerHTML = '<p style="color: #999; font-size: 13px;">No suggestions available</p>';
-                    return;
-                }
-
-                // Extract keywords from EACH channel, keeping track of frequency
-                const keywordCounts = {};
-                const stopWords = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'from', 'have', 'are', 'was', 'were', 'been', 'being', 'will', 'would', 'could', 'should', 'their', 'there', 'they', 'what', 'when', 'where', 'which', 'while', 'who', 'whom', 'whose', 'your', 'about', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'all', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'only', 'own', 'same', 'than', 'too', 'very', 'just', 'also', 'now', 'new', 'like', 'make', 'know', 'take', 'come', 'think', 'look', 'want', 'give', 'use', 'find', 'tell', 'ask', 'work', 'seem', 'feel', 'try', 'leave', 'call', 'video', 'channel', 'subscribe', 'watch', 'episode', 'podcast', 'show', 'official']);
-
-                channelData.items.forEach(ch => {
-                    const words = [
-                        ...ch.snippet.title.split(/[\s\-\_\|\:]+/),
-                        ...(ch.snippet.description || '').split(/[\s\-\_\|\:]+/).slice(0, 30)
-                    ];
-
-                    words.forEach(word => {
-                        const clean = word.toLowerCase().replace(/[^a-z0-9]/g, '');
-                        if (clean.length > 3 && !stopWords.has(clean) && !/^\d+$/.test(clean)) {
-                            keywordCounts[clean] = (keywordCounts[clean] || 0) + 1;
-                        }
-                    });
-                });
-
-                // Sort keywords by frequency (most common across all channels)
-                const sortedKeywords = Object.entries(keywordCounts)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([word]) => word);
-
-                if (sortedKeywords.length === 0) {
-                    suggestionsDiv.innerHTML = '<p style="color: #999; font-size: 13px;">No suggestions available</p>';
-                    return;
-                }
-
-                // Do multiple searches with different keyword combinations
-                const searchPromises = [];
-                const searchQueries = [];
-
-                // Primary search: top 3 most common keywords
-                if (sortedKeywords.length >= 3) {
-                    searchQueries.push(sortedKeywords.slice(0, 3).join(' '));
-                }
-                // Secondary search: next 3 keywords (if available)
-                if (sortedKeywords.length >= 6) {
-                    searchQueries.push(sortedKeywords.slice(3, 6).join(' '));
-                }
-                // Tertiary search: mix of top keywords
-                if (sortedKeywords.length >= 4) {
-                    searchQueries.push(`${sortedKeywords[0]} ${sortedKeywords[2]} ${sortedKeywords[Math.min(4, sortedKeywords.length - 1)]}`);
-                }
-
-                // Fallback if not enough keywords
-                if (searchQueries.length === 0) {
-                    searchQueries.push(sortedKeywords.slice(0, Math.min(3, sortedKeywords.length)).join(' '));
-                }
-
-                // Execute searches in parallel
-                const searchResults = await Promise.all(
-                    searchQueries.map(query =>
-                        fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent(query)}&maxResults=10&key=${apiKey}`)
-                            .then(r => r.json())
-                            .catch(() => ({ items: [] }))
-                    )
-                );
-
-                // Aggregate results and count occurrences (channels appearing in multiple searches rank higher)
-                const channelScores = {};
-                const channelDetails = {};
-
-                searchResults.forEach(result => {
-                    (result.items || []).forEach(item => {
-                        const id = item.snippet.channelId;
-                        if (!existingChannels.some(url => url.includes(id))) {
-                            channelScores[id] = (channelScores[id] || 0) + 1;
-                            channelDetails[id] = item;
-                        }
-                    });
-                });
-
-                // Sort by score (relevance) and take top 5
-                const rankedSuggestions = Object.entries(channelScores)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 5)
-                    .map(([id]) => channelDetails[id]);
-
-                if (rankedSuggestions.length === 0) {
-                    suggestionsDiv.innerHTML = '<p style="color: #999; font-size: 13px;">No new suggestions found</p>';
-                    return;
-                }
-
-                suggestionsDiv.innerHTML = rankedSuggestions.map(item => `
-                    <div class="search-result-item" style="border: 1px solid #e5e7eb; border-radius: 8px; margin: 0;" onclick="addChannelFromModal('https://www.youtube.com/channel/${item.snippet.channelId}', '${escapeHtml(item.snippet.channelTitle)}')">
-                        <img src="${item.snippet.thumbnails.default.url}" alt="" style="width: 40px; height: 40px; border-radius: 50%;">
-                        <div class="search-result-info">
-                            <div class="search-result-name">${escapeHtml(item.snippet.channelTitle)}</div>
-                            <div class="search-result-subs">${escapeHtml(item.snippet.description.slice(0, 50))}...</div>
-                        </div>
-                        <span style="color: #2563eb; font-size: 20px;">+</span>
-                    </div>
-                `).join('');
-
-            } catch (error) {
-                console.error('Failed to fetch suggestions:', error);
-                suggestionsDiv.innerHTML = '<p style="color: #999; font-size: 13px;">Could not load suggestions</p>';
             }
         }
 
