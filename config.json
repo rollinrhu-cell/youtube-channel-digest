@@ -37,6 +37,19 @@
         "https://www.youtube.com/channel/UCaeO5vkdj5xOQHp4UmIN6dw"
       ],
       "frequency": "biweekly"
+    },
+    {
+      "id": "podcast-bros-youtube-digest",
+      "name": "Podcast Bros Youtube Digest",
+      "recipients": [
+        "rollin.hu@nytimes.com"
+      ],
+      "channels": [
+        "https://www.youtube.com/channel/UC5AQEUAwCh1sGDvkQtkDWUQ",
+        "https://www.youtube.com/channel/UC5PstSsGrRwj2o6asQpC4Rg",
+        "https://www.youtube.com/channel/UCzQUP1qoWDoEbmsQxvdjxgQ"
+      ],
+      "frequency": "biweekly"
     }
   ]
 }
