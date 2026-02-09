@@ -118,18 +118,72 @@ def get_channel_feed(channel_id: str) -> list[dict]:
     return videos
 
 
-def _is_short_video(duration_str: str) -> bool:
-    """Check if video is a Short (under 60 seconds). Duration is ISO 8601 format like PT1M30S."""
-    import re
-    # Parse ISO 8601 duration (e.g., PT1H2M30S, PT5M, PT30S)
+def _parse_duration(duration_str: str) -> tuple[int, int, int]:
+    """Parse ISO 8601 duration to hours, minutes, seconds."""
     match = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', duration_str)
     if not match:
-        return False
+        return (0, 0, 0)
     hours = int(match.group(1) or 0)
     minutes = int(match.group(2) or 0)
     seconds = int(match.group(3) or 0)
+    return (hours, minutes, seconds)
+
+
+def _is_short_video(duration_str: str) -> bool:
+    """Check if video is a Short (under 60 seconds)."""
+    hours, minutes, seconds = _parse_duration(duration_str)
     total_seconds = hours * 3600 + minutes * 60 + seconds
     return total_seconds < 60
+
+
+def _format_duration(duration_str: str) -> str:
+    """Format ISO 8601 duration to human readable (e.g., '1:23:45' or '12:34')."""
+    hours, minutes, seconds = _parse_duration(duration_str)
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    else:
+        return f"{minutes}:{seconds:02d}"
+
+
+def _format_publish_date(published_str: str) -> str:
+    """Format publish date to readable format."""
+    try:
+        dt = datetime.fromisoformat(published_str.replace("Z", "+00:00"))
+        return dt.strftime("%b %d, %Y")
+    except Exception:
+        return ""
+
+
+def get_video_captions(video_id: str) -> str:
+    """Try to get video captions/transcript from YouTube."""
+    try:
+        # Try to get auto-generated captions via timedtext API
+        caption_url = f"https://www.youtube.com/watch?v={video_id}"
+        resp = requests.get(caption_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+
+        # Look for caption track in the page
+        import re as caption_re
+        caption_match = caption_re.search(r'"captions":\{"playerCaptionsTracklistRenderer":\{"captionTracks":\[(\{[^\]]+\})\]', resp.text)
+        if not caption_match:
+            return ""
+
+        # Extract the first caption track URL
+        track_data = caption_match.group(1)
+        url_match = caption_re.search(r'"baseUrl":"([^"]+)"', track_data)
+        if not url_match:
+            return ""
+
+        caption_api_url = url_match.group(1).replace("\\u0026", "&")
+        caption_resp = requests.get(caption_api_url, timeout=10)
+
+        # Parse the XML caption response
+        from xml.etree import ElementTree
+        root = ElementTree.fromstring(caption_resp.text)
+        texts = [elem.text for elem in root.findall('.//text') if elem.text]
+        transcript = " ".join(texts[:200])  # Limit to first ~200 segments
+        return transcript[:3000]  # Limit to 3000 chars
+    except Exception:
+        return ""
 
 
 def get_video_details(video_ids: list[str]) -> dict[str, dict]:
@@ -251,20 +305,27 @@ Write 2-4 concise sentences. First highlight the common themes, then note any in
     # Analyze each video
     video_analyses = {}
     for v in videos:
+        transcript = v.get('transcript', '')
+        transcript_section = ""
+        if transcript:
+            transcript_section = f"\nTranscript excerpt: {transcript[:2000]}"
+
         video_prompt = f"""Analyze this YouTube podcast/video and extract information.
 
 Title: {v['title']}
 Channel: {v['channel']}
 Description: {v.get('description', '')[:1500]}
-Sample comments: {'; '.join(v.get('sample_comments', [])[:10])}
+Sample comments: {'; '.join(v.get('sample_comments', [])[:10])}{transcript_section}
 
 Extract:
 1. GUESTS: Look for guest names in the title (often after "with" or before "|") and in the description. For podcasts, the title often contains the guest name. Return full names.
 2. TOPICS: What are the 2-3 main topics or themes discussed? Be specific.
 3. SENTIMENT: Based on the comments, is the overall reaction positive, negative, or mixed?
+4. CATEGORY: Assign ONE category from: Politics, Tech, Business, Entertainment, Science, Sports, Culture, News, Education, Other
+5. SUMMARY: Write a 1-2 sentence summary of what this video is about based on the title, description{' and transcript' if transcript else ''}. Be specific and informative.
 
 You MUST respond with ONLY valid JSON in this exact format, no other text:
-{{"guests": ["Full Name 1", "Full Name 2"], "topics": ["specific topic 1", "specific topic 2"], "sentiment": "positive"}}
+{{"guests": ["Full Name 1"], "topics": ["topic 1", "topic 2"], "sentiment": "positive", "category": "Politics", "summary": "A concise summary of the video content."}}
 
 If no guests, use empty array: "guests": []"""
 
@@ -272,18 +333,18 @@ If no guests, use empty array: "guests": []"""
         try:
             response = client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=200,
+                max_tokens=300,
                 messages=[{"role": "user", "content": video_prompt}]
             )
             text = response.content[0].text.strip()
-            # Find JSON in response
-            json_match = re.search(r'\{[^{}]+\}', text)
+            # Find JSON in response (handle nested objects)
+            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text)
             if json_match:
                 parsed = json.loads(json_match.group())
         except Exception as e:
             print(f"    Video analysis failed for {v['title']}: {e}")
 
-        video_analyses[v['id']] = parsed or {"guests": [], "topics": [], "sentiment": "unknown"}
+        video_analyses[v['id']] = parsed or {"guests": [], "topics": [], "sentiment": "unknown", "category": "Other", "summary": ""}
 
     return {"themes": themes, "video_analyses": video_analyses}
 
@@ -308,46 +369,115 @@ def format_email_html(
     unsubscribe_body = f"Please unsubscribe me from this digest.\\n\\n---\\nDigest ID: {digest_id}\\nEmail: {recipient_email}"
     unsubscribe_url = f"https://github.com/{repo_owner}/{repo_name}/issues/new?title=Unsubscribe&body={quote(unsubscribe_body)}&labels=unsubscribe"
 
-    videos_html = ""
+    # Calculate engagement rates to identify "Must Watch" videos
+    engagement_rates = []
+    for v in videos:
+        views = v.get("views", 0)
+        likes = v.get("likes", 0)
+        if views > 0:
+            engagement_rates.append((v["id"], likes / views))
+        else:
+            engagement_rates.append((v["id"], 0))
+
+    # Top 20% by engagement are "Must Watch"
+    sorted_rates = sorted(engagement_rates, key=lambda x: x[1], reverse=True)
+    must_watch_threshold = max(1, len(sorted_rates) // 5)  # Top 20%, at least 1
+    must_watch_ids = set(vid_id for vid_id, _ in sorted_rates[:must_watch_threshold])
+
+    # Group videos by category
+    categories = {}
     for v in videos:
         vid_analysis = analysis.get("video_analyses", {}).get(v["id"], {})
+        category = vid_analysis.get("category", "Other")
+        if category not in categories:
+            categories[category] = []
+        categories[category].append(v)
+
+    # Sort categories by number of videos (descending)
+    sorted_categories = sorted(categories.items(), key=lambda x: len(x[1]), reverse=True)
+
+    def format_video_card(v: dict) -> str:
+        vid_analysis = analysis.get("video_analyses", {}).get(v["id"], {})
         guests = vid_analysis.get("guests", [])
-        topics = vid_analysis.get("topics", [])
+        summary = vid_analysis.get("summary", "")
         sentiment = vid_analysis.get("sentiment", "unknown")
 
         views = v.get("views", 0)
         views_str = f"{views:,}" if views else "N/A"
+
+        # Duration
+        duration = _format_duration(v.get("duration", "PT0S"))
+
+        # Publish date
+        pub_date = _format_publish_date(v.get("published", ""))
+
+        # Must watch badge
+        must_watch_badge = ""
+        if v["id"] in must_watch_ids:
+            must_watch_badge = '<span style="display: inline-block; background: #fef3c7; color: #92400e; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-left: 8px;">MUST WATCH</span>'
 
         # Build guest line
         guest_line = ""
         if guests:
             guest_line = f'<p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Guest:</strong> {", ".join(guests)}</p>'
 
-        # Build topics line
-        topic_line = ""
-        if topics:
-            topic_line = f'<p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Topics:</strong> {", ".join(topics)}</p>'
+        # Build summary line
+        summary_line = ""
+        if summary:
+            summary_line = f'<p style="margin: 8px 0; font-size: 14px; color: #444; line-height: 1.5;">{summary}</p>'
 
         # Build sentiment line
         sentiment_emoji = {"positive": "👍", "negative": "👎", "mixed": "🤔"}.get(sentiment, "")
         sentiment_line = ""
         if sentiment and sentiment != "unknown":
-            sentiment_line = f'<p style="margin: 0; font-size: 14px; color: #666;"><strong>Sentiment:</strong> {sentiment} {sentiment_emoji}</p>'
+            sentiment_line = f'<span style="margin-left: 12px; color: #666;">{sentiment} {sentiment_emoji}</span>'
 
         # YouTube thumbnail URL
         thumbnail_url = f"https://img.youtube.com/vi/{v['id']}/mqdefault.jpg"
 
-        videos_html += f"""<div style="margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid #eee;">
-<a href="{v['url']}" style="display: block; margin-bottom: 12px;">
+        return f"""<div style="margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid #eee;">
+<a href="{v['url']}" style="display: block; margin-bottom: 12px; position: relative;">
     <img src="{thumbnail_url}" alt="{v['title']}" style="width: 100%; max-width: 320px; height: auto; border-radius: 8px;">
+    <span style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.8); color: white; font-size: 12px; padding: 2px 6px; border-radius: 4px;">{duration}</span>
 </a>
-<p style="margin: 0 0 4px 0; font-size: 16px; font-weight: bold;"><a href="{v['url']}" style="color: #1a1a1a; text-decoration: none;">{v['title']}</a></p>
-<p style="margin: 0 0 12px 0; color: #666; font-size: 13px;">{v['channel']} - {views_str} views</p>
+<p style="margin: 0 0 4px 0; font-size: 16px; font-weight: bold;">
+    <a href="{v['url']}" style="color: #1a1a1a; text-decoration: none;">{v['title']}</a>
+    {must_watch_badge}
+</p>
+<p style="margin: 0 0 8px 0; color: #666; font-size: 13px;">
+    {v['channel']} &bull; {pub_date} &bull; {views_str} views{sentiment_line}
+</p>
 {guest_line}
-{topic_line}
-{sentiment_line}
+{summary_line}
 </div>
 """
+
+    # Build HTML for each category
+    categories_html = ""
+    for category, cat_videos in sorted_categories:
+        category_icon = {
+            "Politics": "🏛️",
+            "Tech": "💻",
+            "Business": "💼",
+            "Entertainment": "🎬",
+            "Science": "🔬",
+            "Sports": "⚽",
+            "Culture": "🎭",
+            "News": "📰",
+            "Education": "📚",
+            "Other": "📌",
+        }.get(category, "📌")
+
+        videos_in_category = "".join(format_video_card(v) for v in cat_videos)
+
+        categories_html += f"""
+        <div style="margin-bottom: 32px;">
+            <h3 style="font-size: 16px; color: #1a1a1a; margin: 0 0 16px 0; padding-bottom: 8px; border-bottom: 2px solid #e5e7eb;">
+                {category_icon} {category} ({len(cat_videos)})
+            </h3>
+            {videos_in_category}
+        </div>
+        """
 
     html = f"""
     <!DOCTYPE html>
@@ -367,7 +497,7 @@ def format_email_html(
 
         <h2 style="font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #666; margin-bottom: 16px;">New Uploads ({len(videos)})</h2>
 
-        {videos_html}
+        {categories_html}
 
         <p style="color: #999; font-size: 12px; margin-top: 32px; text-align: center;">
             Generated {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}<br>
@@ -496,6 +626,11 @@ def run_digest(digest: dict, state: dict, subscribers: dict) -> bool:
 
     # Filter out YouTube Shorts (videos under 60 seconds OR with /shorts/ in URL)
     all_videos = [v for v in all_videos if not v.get("is_short", False) and "/shorts/" not in v.get("url", "")]
+
+    # Fetch transcripts for remaining videos (for better summaries)
+    print("  Fetching transcripts...")
+    for v in all_videos:
+        v["transcript"] = get_video_captions(v["id"])
 
     if not all_videos:
         print(f"  No new videos (excluding Shorts) found for {name}")
