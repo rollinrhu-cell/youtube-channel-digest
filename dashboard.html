@@ -645,7 +645,7 @@
             </div>
             <div style="display: flex; gap: 8px;">
                 <button class="btn btn-primary" onclick="showCreateModal()">+ New Digest</button>
-                <button class="settings-btn" onclick="showSettingsModal()">Settings</button>
+                <button class="settings-btn" onclick="showSettingsModal()">API Keys</button>
             </div>
         </header>
 
@@ -723,7 +723,8 @@
     <!-- Settings Modal -->
     <div class="modal-overlay" id="settingsOverlay">
         <div class="modal">
-            <h3>Settings</h3>
+            <h3>API Keys</h3>
+            <p style="color: #666; font-size: 13px; margin-bottom: 16px;">Connect your accounts to manage digests.</p>
 
             <label class="form-label">GitHub Token (for editing)</label>
             <input type="password" id="tokenInput" placeholder="ghp_xxxxxxxxxxxx">
