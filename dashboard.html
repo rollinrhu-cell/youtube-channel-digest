@@ -149,6 +149,34 @@
             outline-offset: 2px;
         }
 
+        .transcript-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            color: #666;
+            padding: 4px 8px;
+            border-radius: 6px;
+            background: #f3f4f6;
+            transition: background 0.2s;
+        }
+
+        .transcript-toggle:hover {
+            background: #e5e7eb;
+        }
+
+        .transcript-toggle input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+            cursor: pointer;
+            accent-color: #2563eb;
+        }
+
+        .transcript-toggle .toggle-label {
+            user-select: none;
+        }
+
         .digest-name.editable {
             cursor: pointer;
             padding: 2px 6px;
@@ -1428,6 +1456,10 @@
                                     <option value="biweekly" ${frequency === 'biweekly' ? 'selected' : ''}>Biweekly</option>
                                     <option value="weekly" ${frequency === 'weekly' ? 'selected' : ''}>Weekly</option>
                                 </select>
+                                <label class="transcript-toggle" title="Fetch video transcripts for deeper AI analysis (uses more API tokens)">
+                                    <input type="checkbox" ${digest.fetch_transcripts ? 'checked' : ''} onchange="changeTranscriptSetting(${index}, this.checked)">
+                                    <span class="toggle-label">Transcripts</span>
+                                </label>
                             </div>
                         </div>
                         <div class="digest-body">
@@ -1899,6 +1931,18 @@
                 renderDashboard();
             } else {
                 config.digests[digestIndex].frequency = oldFrequency;
+                renderDashboard();
+            }
+        }
+
+        async function changeTranscriptSetting(digestIndex, enabled) {
+            const oldValue = config.digests[digestIndex].fetch_transcripts;
+            config.digests[digestIndex].fetch_transcripts = enabled;
+
+            if (await saveConfig()) {
+                showToast(`Transcript fetching ${enabled ? 'enabled' : 'disabled'}`, 'success');
+            } else {
+                config.digests[digestIndex].fetch_transcripts = oldValue;
                 renderDashboard();
             }
         }

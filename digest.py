@@ -627,10 +627,14 @@ def run_digest(digest: dict, state: dict, subscribers: dict) -> bool:
     # Filter out YouTube Shorts (videos under 60 seconds OR with /shorts/ in URL)
     all_videos = [v for v in all_videos if not v.get("is_short", False) and "/shorts/" not in v.get("url", "")]
 
-    # Fetch transcripts for remaining videos (for better summaries)
-    print("  Fetching transcripts...")
-    for v in all_videos:
-        v["transcript"] = get_video_captions(v["id"])
+    # Fetch transcripts if enabled for this digest (optional, saves API costs)
+    if digest.get("fetch_transcripts", False):
+        print("  Fetching transcripts...")
+        for v in all_videos:
+            v["transcript"] = get_video_captions(v["id"])
+    else:
+        for v in all_videos:
+            v["transcript"] = ""
 
     if not all_videos:
         print(f"  No new videos (excluding Shorts) found for {name}")
