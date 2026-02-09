@@ -226,12 +226,15 @@ Sample comments: {'; '.join(v.get('sample_comments', [])[:5])}
         video_summaries.append(summary)
 
     # Get overarching themes
-    themes_prompt = f"""Analyze these YouTube videos from the "{digest_name}" digest and write a brief paragraph (2-3 sentences) identifying overarching themes, trends, or notable patterns across the channels this week.
+    themes_prompt = f"""Analyze these YouTube videos from the "{digest_name}" digest and write a brief summary identifying:
+
+1. Overarching themes, trends, or notable patterns across the channels this week
+2. Any distinctive disagreements, contrasting perspectives, or debates between channels on the same topics (if any exist)
 
 Videos:
 {"".join(video_summaries)}
 
-Write a concise, insightful paragraph about the themes. Be specific about topics discussed."""
+Write 2-4 concise sentences. First highlight the common themes, then note any interesting disagreements or contrasting takes between channels if you notice any. Be specific about topics and which channels disagree."""
 
     themes = None
     try:
