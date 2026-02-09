@@ -26,9 +26,24 @@ YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
+DIGEST_SUBSCRIBERS = os.environ.get("DIGEST_SUBSCRIBERS", "")
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
 STATE_PATH = Path(__file__).parent / "state.json"
+
+
+def load_subscribers() -> dict:
+    """Load subscriber emails from environment variable.
+
+    Format: {"digest-id": ["email1@example.com", "email2@example.com"]}
+    """
+    if not DIGEST_SUBSCRIBERS:
+        return {}
+    try:
+        return json.loads(DIGEST_SUBSCRIBERS)
+    except json.JSONDecodeError:
+        print("Warning: DIGEST_SUBSCRIBERS is not valid JSON")
+        return {}
 
 
 def load_config() -> dict:
@@ -417,10 +432,12 @@ def should_run_digest(digest: dict, state: dict) -> bool:
     return True
 
 
-def run_digest(digest: dict, state: dict) -> bool:
+def run_digest(digest: dict, state: dict, subscribers: dict) -> bool:
     """Run a single digest."""
     name = digest["name"]
-    recipients = digest["recipients"]
+    digest_id = digest.get("id", name)
+    # Get recipients from secret (priority) or fall back to config
+    recipients = subscribers.get(digest_id, digest.get("recipients", []))
     channels = digest["channels"]
     frequency = digest.get("frequency", "daily")
 
@@ -523,6 +540,7 @@ def main():
 
     config = load_config()
     state = load_state()
+    subscribers = load_subscribers()
 
     if not config.get("digests"):
         print("No digests configured. Add digests via the web interface or config.json")
@@ -535,14 +553,17 @@ def main():
         if args.digest and args.digest != digest_id and args.digest != digest["name"]:
             continue
 
+        # Get recipients from secret (priority) or config
+        recipients = subscribers.get(digest_id, digest.get("recipients", []))
+
         # Skip digests with no recipients
-        if not digest.get("recipients"):
+        if not recipients:
             print(f"Skipping {digest['name']} (no recipients)")
             continue
 
         # When running a specific digest, always run it (ignore schedule)
         if args.digest or should_run_digest(digest, state):
-            run_digest(digest, state)
+            run_digest(digest, state, subscribers)
         else:
             print(f"Skipping {digest['name']} (not scheduled)")
 
