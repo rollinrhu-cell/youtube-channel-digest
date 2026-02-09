@@ -750,6 +750,40 @@
         </div>
     </div>
 
+    <!-- Welcome/Setup Modal -->
+    <div class="modal-overlay" id="welcomeOverlay">
+        <div class="modal" style="max-width: 500px;">
+            <h3>Welcome to YouTube Digest</h3>
+            <p style="color: #666; font-size: 14px; line-height: 1.6; margin-bottom: 20px;">
+                This dashboard lets you manage YouTube channel digests — automated email summaries of new videos with AI-powered analysis.
+            </p>
+
+            <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                <p style="font-size: 13px; color: #0369a1; margin: 0 0 8px 0; font-weight: 600;">Quick Setup</p>
+                <p style="font-size: 13px; color: #0c4a6e; margin: 0;">
+                    To manage digests, you'll need API keys. Ask your admin for the shared keys, or create your own.
+                </p>
+            </div>
+
+            <label class="form-label">GitHub Token *</label>
+            <input type="password" id="setupTokenInput" placeholder="ghp_xxxxxxxxxxxx">
+            <p style="font-size: 11px; color: #999; margin-top: -12px; margin-bottom: 16px;">
+                Required to add/remove channels and subscribers
+            </p>
+
+            <label class="form-label">YouTube API Key (optional)</label>
+            <input type="password" id="setupYoutubeInput" placeholder="AIzaSy...">
+            <p style="font-size: 11px; color: #999; margin-top: -12px; margin-bottom: 16px;">
+                Enables channel search and shows channel names
+            </p>
+
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="skipSetup()">Skip for now</button>
+                <button class="btn btn-primary" onclick="completeSetup()">Get Started</button>
+            </div>
+        </div>
+    </div>
+
     <!-- libsodium for encrypting GitHub secrets -->
     <script src="https://cdn.jsdelivr.net/npm/tweetsodium@0.0.5/dist/tweetsodium.min.js"></script>
 
@@ -798,8 +832,46 @@
         function clearAllKeys() {
             localStorage.removeItem('github_token');
             localStorage.removeItem('youtube_api_key');
+            localStorage.removeItem('setup_complete');
             showToast('All keys cleared', 'success');
             closeSettings();
+        }
+
+        // Welcome/Setup functions
+        function checkFirstVisit() {
+            const hasToken = getToken();
+            const setupComplete = localStorage.getItem('setup_complete');
+
+            if (!hasToken && !setupComplete) {
+                document.getElementById('welcomeOverlay').classList.add('active');
+            }
+        }
+
+        function skipSetup() {
+            localStorage.setItem('setup_complete', 'skipped');
+            document.getElementById('welcomeOverlay').classList.remove('active');
+        }
+
+        function completeSetup() {
+            const token = document.getElementById('setupTokenInput').value.trim();
+            const youtubeKey = document.getElementById('setupYoutubeInput').value.trim();
+
+            if (token) {
+                localStorage.setItem('github_token', token);
+            }
+            if (youtubeKey) {
+                localStorage.setItem('youtube_api_key', youtubeKey);
+            }
+
+            localStorage.setItem('setup_complete', 'true');
+            document.getElementById('welcomeOverlay').classList.remove('active');
+
+            if (token) {
+                showToast('Setup complete!', 'success');
+                loadConfig();
+            } else {
+                showToast('Running in view-only mode', 'success');
+            }
         }
 
         // Subscriber management with GitHub Secrets
@@ -1816,6 +1888,7 @@
 
         // Initial load
         loadConfig();
+        checkFirstVisit();
 
         // Auto-refresh every 60 seconds (only if not editing)
         setInterval(() => {
