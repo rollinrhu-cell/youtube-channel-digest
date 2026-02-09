@@ -749,6 +749,9 @@
         </div>
     </div>
 
+    <!-- libsodium for encrypting GitHub secrets -->
+    <script src="https://cdn.jsdelivr.net/npm/tweetsodium@0.0.5/dist/tweetsodium.min.js"></script>
+
     <script>
         const REPO_OWNER = 'rollinrhu-cell';
         const REPO_NAME = 'youtube-channel-digest';
@@ -758,6 +761,7 @@
         let configSha = null;
         let currentModal = null;
         let channelNames = JSON.parse(localStorage.getItem('channel_names_cache') || '{}');
+        let digestSubscribers = JSON.parse(localStorage.getItem('digest_subscribers') || '{}');
 
         // Token management
         function getToken() {
@@ -795,6 +799,106 @@
             localStorage.removeItem('youtube_api_key');
             showToast('All keys cleared', 'success');
             closeSettings();
+        }
+
+        // Subscriber management with GitHub Secrets
+        function getSubscribers(digestId) {
+            return digestSubscribers[digestId] || [];
+        }
+
+        function initSubscribersFromConfig() {
+            // Initialize localStorage from config.json if empty
+            if (Object.keys(digestSubscribers).length === 0 && config?.digests) {
+                for (const digest of config.digests) {
+                    const id = digest.id || digest.name;
+                    if (digest.recipients?.length > 0) {
+                        digestSubscribers[id] = [...digest.recipients];
+                    }
+                }
+                localStorage.setItem('digest_subscribers', JSON.stringify(digestSubscribers));
+            }
+        }
+
+        async function updateSubscribersSecret() {
+            const token = getToken();
+            if (!token) {
+                console.log('No token, skipping secret update');
+                return false;
+            }
+
+            try {
+                // Get the public key for encrypting secrets
+                const keyResponse = await fetch(`${API_BASE}/repos/${REPO_OWNER}/${REPO_NAME}/actions/secrets/public-key`, {
+                    headers: {
+                        'Authorization': `token ${token}`,
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                });
+
+                if (!keyResponse.ok) {
+                    throw new Error('Failed to get public key');
+                }
+
+                const { key, key_id } = await keyResponse.json();
+
+                // Encrypt the subscribers JSON
+                const secretValue = JSON.stringify(digestSubscribers);
+                const messageBytes = new TextEncoder().encode(secretValue);
+                const keyBytes = Uint8Array.from(atob(key), c => c.charCodeAt(0));
+
+                // Use tweetsodium to encrypt
+                const encryptedBytes = window.sodium.seal(messageBytes, keyBytes);
+                const encryptedValue = btoa(String.fromCharCode.apply(null, encryptedBytes));
+
+                // Update the secret
+                const updateResponse = await fetch(`${API_BASE}/repos/${REPO_OWNER}/${REPO_NAME}/actions/secrets/DIGEST_SUBSCRIBERS`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `token ${token}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        encrypted_value: encryptedValue,
+                        key_id: key_id
+                    })
+                });
+
+                if (!updateResponse.ok && updateResponse.status !== 201 && updateResponse.status !== 204) {
+                    throw new Error(`Failed to update secret: ${updateResponse.status}`);
+                }
+
+                console.log('Subscribers secret updated');
+                return true;
+            } catch (error) {
+                console.error('Failed to update subscribers secret:', error);
+                showToast('Warning: Could not sync subscribers to secret', 'error');
+                return false;
+            }
+        }
+
+        async function addSubscriber(digestId, email) {
+            if (!digestSubscribers[digestId]) {
+                digestSubscribers[digestId] = [];
+            }
+            if (digestSubscribers[digestId].includes(email)) {
+                showToast('Email already subscribed', 'error');
+                return false;
+            }
+            digestSubscribers[digestId].push(email);
+            localStorage.setItem('digest_subscribers', JSON.stringify(digestSubscribers));
+            await updateSubscribersSecret();
+            return true;
+        }
+
+        async function removeSubscriberEmail(digestId, email) {
+            if (!digestSubscribers[digestId]) return false;
+            const index = digestSubscribers[digestId].indexOf(email);
+            if (index === -1) return false;
+            digestSubscribers[digestId].splice(index, 1);
+            localStorage.setItem('digest_subscribers', JSON.stringify(digestSubscribers));
+            await updateSubscribersSecret();
+            return true;
         }
 
         // Create Digest Modal
@@ -1081,6 +1185,9 @@
                 configSha = data.sha;
                 config = JSON.parse(atob(data.content));
 
+                // Initialize subscribers from config if needed
+                initSubscribersFromConfig();
+
                 // Fetch channel names in background
                 const allChannels = config.digests?.flatMap(d => d.channels || []) || [];
                 fetchChannelNames(allChannels).then(() => renderDashboard());
@@ -1092,6 +1199,9 @@
                     const response = await fetch(`https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/config.json?t=${Date.now()}`);
                     config = await response.json();
                     configSha = null;
+
+                    // Initialize subscribers from config if needed
+                    initSubscribersFromConfig();
 
                     // Fetch channel names in background
                     const allChannels = config.digests?.flatMap(d => d.channels || []) || [];
@@ -1194,7 +1304,8 @@
 
             // Calculate emails per week based on digest frequencies
             const emailsPerWeek = digests.reduce((sum, d) => {
-                const recipients = d.recipients?.length || 0;
+                const digestId = d.id || d.name;
+                const recipients = getSubscribers(digestId).length;
                 const freq = d.frequency || 'daily';
                 // daily=7/week, biweekly=2/week, weekly=1/week
                 const multiplier = freq === 'daily' ? 7 : freq === 'biweekly' ? 2 : 1;
@@ -1226,7 +1337,8 @@
 
             digests.forEach((digest, index) => {
                 const digestId = digest.id || digest.name;
-                const hasRecipients = digest.recipients && digest.recipients.length > 0;
+                const subscribers = getSubscribers(digestId);
+                const hasRecipients = subscribers.length > 0;
                 const hasChannels = digest.channels && digest.channels.length > 0;
                 const frequency = digest.frequency || 'daily';
 
@@ -1278,12 +1390,12 @@
                             `}
 
                             <div class="section-title">
-                                Subscribers (${digest.recipients?.length || 0})
+                                Subscribers (${subscribers.length})
                                 <span class="add-btn" onclick="showAddModal('subscriber', ${index})">+ Add Subscriber</span>
                             </div>
                             ${hasRecipients ? `
                                 <ul class="recipients-list">
-                                    ${digest.recipients.map((r, i) => `
+                                    ${subscribers.map((r, i) => `
                                         <li>
                                             <span class="item-content" data-icon="📧">${escapeHtml(r)}</span>
                                             <span class="remove-btn" onclick="removeSubscriber(${index}, ${i})" title="Unsubscribe">×</span>
@@ -1573,23 +1685,21 @@
                     config.digests[digestIndex].channels = [];
                 }
                 config.digests[digestIndex].channels.push(value);
-            } else {
-                if (!config.digests[digestIndex].recipients) {
-                    config.digests[digestIndex].recipients = [];
-                }
-                config.digests[digestIndex].recipients.push(value);
-            }
 
-            if (await saveConfig()) {
-                showToast(`Added ${type}: ${value}`, 'success');
-                renderDashboard();
-                closeModal();
-            } else {
-                // Revert on failure
-                if (type === 'channel') {
-                    config.digests[digestIndex].channels.pop();
+                if (await saveConfig()) {
+                    showToast(`Added channel: ${value}`, 'success');
+                    renderDashboard();
+                    closeModal();
                 } else {
-                    config.digests[digestIndex].recipients.pop();
+                    config.digests[digestIndex].channels.pop();
+                }
+            } else {
+                // Subscribers go to GitHub Secret, not config.json
+                const digestId = config.digests[digestIndex].id || config.digests[digestIndex].name;
+                if (await addSubscriber(digestId, value)) {
+                    showToast(`Added subscriber: ${value}`, 'success');
+                    renderDashboard();
+                    closeModal();
                 }
             }
 
@@ -1612,16 +1722,15 @@
         }
 
         async function removeSubscriber(digestIndex, subIndex) {
-            const email = config.digests[digestIndex].recipients[subIndex];
+            const digestId = config.digests[digestIndex].id || config.digests[digestIndex].name;
+            const subscribers = getSubscribers(digestId);
+            const email = subscribers[subIndex];
+
             if (!confirm(`Unsubscribe "${email}"?`)) return;
 
-            const removed = config.digests[digestIndex].recipients.splice(subIndex, 1)[0];
-
-            if (await saveConfig()) {
+            if (await removeSubscriberEmail(digestId, email)) {
                 showToast('Subscriber removed', 'success');
                 renderDashboard();
-            } else {
-                config.digests[digestIndex].recipients.splice(subIndex, 0, removed);
             }
         }
 
