@@ -3,9 +3,6 @@
     {
       "id": "democratic-party-monitor",
       "name": "Democratic Party Monitor",
-      "recipients": [
-        "REDACTED"
-      ],
       "channels": [
         "https://www.youtube.com/channel/UCKRoXz3hHAu2XL_k3Ef4vJQ",
         "https://www.youtube.com/channel/UCWeKyWiFeb4YV8e3EibEqQw",
@@ -16,9 +13,6 @@
     {
       "id": "ai-and-tech-news",
       "name": "AI and Tech News",
-      "recipients": [
-        "REDACTED"
-      ],
       "channels": [
         "https://www.youtube.com/channel/UCESLZhusAkFfsNsApnjF_Cg",
         "https://www.youtube.com/channel/UCZcR2SVWaGWNlMqPxvQS3vw",
@@ -30,9 +24,6 @@
     {
       "id": "rightwing-podcats",
       "name": "Rightwing Podcats",
-      "recipients": [
-        "REDACTED"
-      ],
       "channels": [
         "https://www.youtube.com/channel/UCJugC7hlL5uNoii46ICyUvw",
         "https://www.youtube.com/channel/UCGttrUON87gWfU6dMWm1fcA"
