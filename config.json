@@ -26,6 +26,18 @@
         "https://www.youtube.com/channel/UC-DRzaGnL_vtBUpCFH5M0tg"
       ],
       "frequency": "biweekly"
+    },
+    {
+      "id": "rightwing-podcats",
+      "name": "Rightwing Podcats",
+      "recipients": [
+        "REDACTED"
+      ],
+      "channels": [
+        "https://www.youtube.com/channel/UCJugC7hlL5uNoii46ICyUvw",
+        "https://www.youtube.com/channel/UCGttrUON87gWfU6dMWm1fcA"
+      ],
+      "frequency": "biweekly"
     }
   ]
 }
