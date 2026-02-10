@@ -714,7 +714,7 @@
                     <select id="createFrequency" class="form-select">
                         <option value="daily">Daily</option>
                         <option value="biweekly" selected>Biweekly (Mon & Thurs)</option>
-                        <option value="weekly">Weekly</option>
+                        <option value="weekly">Weekly (Mondays)</option>
                     </select>
                 </div>
                 <div style="flex: 1;">
@@ -1443,7 +1443,7 @@
                                 <select class="frequency-select ${frequency}" onchange="changeFrequency(${index}, this.value)">
                                     <option value="daily" ${frequency === 'daily' ? 'selected' : ''}>Daily</option>
                                     <option value="biweekly" ${frequency === 'biweekly' ? 'selected' : ''}>Biweekly (Mon & Thurs)</option>
-                                    <option value="weekly" ${frequency === 'weekly' ? 'selected' : ''}>Weekly</option>
+                                    <option value="weekly" ${frequency === 'weekly' ? 'selected' : ''}>Weekly (Mondays)</option>
                                 </select>
                                 <label class="transcript-toggle" title="Fetch video transcripts for deeper AI analysis (uses more API tokens)">
                                     <input type="checkbox" ${digest.fetch_transcripts ? 'checked' : ''} onchange="changeTranscriptSetting(${index}, this.checked)">
