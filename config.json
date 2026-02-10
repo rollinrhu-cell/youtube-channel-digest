@@ -18,6 +18,21 @@
         "https://www.youtube.com/channel/UCKRoXz3hHAu2XL_k3Ef4vJQ"
       ],
       "frequency": "biweekly"
+    },
+    {
+      "id": "tech-and-ai-podcast-digest",
+      "name": "Tech and AI Podcast Digest",
+      "recipients": [
+        "rollin.hu@nytimes.com"
+      ],
+      "channels": [
+        "https://www.youtube.com/channel/UC-DRzaGnL_vtBUpCFH5M0tg",
+        "https://www.youtube.com/channel/UCESLZhusAkFfsNsApnjF_Cg",
+        "https://www.youtube.com/channel/UCXl4i9dYBrFOabk0xGmbkRA",
+        "https://www.youtube.com/channel/UC_AnpBvnhXTcipgGEHLWoOg",
+        "https://www.youtube.com/channel/UCZcR2SVWaGWNlMqPxvQS3vw"
+      ],
+      "frequency": "biweekly"
     }
   ]
 }
