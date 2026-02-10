@@ -1271,43 +1271,80 @@
             const apiKey = getYouTubeKey();
             if (!apiKey) return;
 
-            // Extract channel IDs that we don't have names for
+            // Separate URLs by type
             const idsToFetch = [];
+            const handlesToFetch = [];
+
             for (const url of channelUrls) {
-                const match = url.match(/\/channel\/([^\/\?]+)/);
-                if (match && !channelNames[match[1]]) {
-                    idsToFetch.push(match[1]);
+                // Check for /channel/ID format
+                const channelMatch = url.match(/\/channel\/([^\/\?]+)/);
+                if (channelMatch && !channelNames[channelMatch[1]]) {
+                    idsToFetch.push(channelMatch[1]);
+                    continue;
+                }
+
+                // Check for /@handle format
+                const handleMatch = url.match(/\/@([^\/\?]+)/);
+                if (handleMatch && !channelNames['@' + handleMatch[1]]) {
+                    handlesToFetch.push(handleMatch[1]);
                 }
             }
 
-            if (idsToFetch.length === 0) return;
+            // Fetch by channel IDs
+            if (idsToFetch.length > 0) {
+                try {
+                    const response = await fetch(
+                        `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${idsToFetch.join(',')}&key=${apiKey}`
+                    );
+                    const data = await response.json();
 
-            try {
-                const response = await fetch(
-                    `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${idsToFetch.join(',')}&key=${apiKey}`
-                );
-                const data = await response.json();
-
-                if (data.error) {
-                    console.warn('YouTube API error:', data.error.message);
-                    return;
+                    if (data.error) {
+                        console.warn('YouTube API error:', data.error.message);
+                    } else if (data.items) {
+                        for (const item of data.items) {
+                            channelNames[item.id] = {
+                                name: item.snippet.title,
+                                thumbnail: item.snippet.thumbnails.default.url,
+                                subscriberCount: item.statistics?.subscriberCount || null,
+                                hiddenSubs: item.statistics?.hiddenSubscriberCount || false
+                            };
+                        }
+                        console.log('Fetched channel data for', data.items.length, 'channels by ID');
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch channel names by ID:', e);
                 }
+            }
 
-                if (data.items) {
-                    for (const item of data.items) {
-                        channelNames[item.id] = {
+            // Fetch by handles (one at a time since API doesn't support multiple handles)
+            for (const handle of handlesToFetch) {
+                try {
+                    const response = await fetch(
+                        `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&forHandle=@${handle}&key=${apiKey}`
+                    );
+                    const data = await response.json();
+
+                    if (data.error) {
+                        console.warn('YouTube API error for @' + handle + ':', data.error.message);
+                    } else if (data.items && data.items[0]) {
+                        const item = data.items[0];
+                        // Store by both handle and channel ID for lookups
+                        const channelData = {
                             name: item.snippet.title,
                             thumbnail: item.snippet.thumbnails.default.url,
                             subscriberCount: item.statistics?.subscriberCount || null,
                             hiddenSubs: item.statistics?.hiddenSubscriberCount || false
                         };
+                        channelNames['@' + handle] = channelData;
+                        channelNames[item.id] = channelData;
+                        console.log('Fetched channel data for @' + handle);
                     }
-                    localStorage.setItem('channel_names_cache', JSON.stringify(channelNames));
-                    console.log('Fetched channel data for', data.items.length, 'channels');
+                } catch (e) {
+                    console.error('Failed to fetch channel @' + handle + ':', e);
                 }
-            } catch (e) {
-                console.error('Failed to fetch channel names:', e);
             }
+
+            localStorage.setItem('channel_names_cache', JSON.stringify(channelNames));
         }
 
         function formatSubscriberCount(count) {
@@ -1321,32 +1358,37 @@
             return num + ' subs';
         }
 
-        function getChannelSubCount(url) {
-            const match = url.match(/\/channel\/([^\/\?]+)/);
-            if (match && channelNames[match[1]]) {
-                const data = channelNames[match[1]];
-                if (data.hiddenSubs) return 'Subs hidden';
-                return formatSubscriberCount(data.subscriberCount);
+        function getChannelData(url) {
+            // Try /channel/ID format
+            const channelMatch = url.match(/\/channel\/([^\/\?]+)/);
+            if (channelMatch && channelNames[channelMatch[1]]) {
+                return channelNames[channelMatch[1]];
             }
-            return '';
+            // Try /@handle format
+            const handleMatch = url.match(/\/@([^\/\?]+)/);
+            if (handleMatch && channelNames['@' + handleMatch[1]]) {
+                return channelNames['@' + handleMatch[1]];
+            }
+            return null;
+        }
+
+        function getChannelSubCount(url) {
+            const data = getChannelData(url);
+            if (!data) return '';
+            if (data.hiddenSubs) return 'Subs hidden';
+            return formatSubscriberCount(data.subscriberCount);
         }
 
         function getChannelDisplayName(url) {
-            // Try to get cached name first
-            const match = url.match(/\/channel\/([^\/\?]+)/);
-            if (match && channelNames[match[1]]) {
-                return channelNames[match[1]].name;
-            }
+            const data = getChannelData(url);
+            if (data) return data.name;
             // Fallback to extracting from URL
             return formatChannelUrl(url);
         }
 
         function getChannelThumbnail(url) {
-            const match = url.match(/\/channel\/([^\/\?]+)/);
-            if (match && channelNames[match[1]]) {
-                return channelNames[match[1]].thumbnail;
-            }
-            return null;
+            const data = getChannelData(url);
+            return data ? data.thumbnail : null;
         }
 
         async function loadConfig() {
