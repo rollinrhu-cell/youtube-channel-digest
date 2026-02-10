@@ -160,6 +160,7 @@
             border-radius: 6px;
             background: #f3f4f6;
             transition: background 0.2s;
+            position: relative;
         }
 
         .transcript-toggle:hover {
@@ -175,6 +176,48 @@
 
         .transcript-toggle .toggle-label {
             user-select: none;
+        }
+
+        .transcript-toggle .tooltip {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 8px;
+            background: #1a1a1a;
+            color: white;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            line-height: 1.5;
+            width: 220px;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        .transcript-toggle .tooltip::before {
+            content: '';
+            position: absolute;
+            top: -6px;
+            right: 16px;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 6px solid #1a1a1a;
+        }
+
+        .transcript-toggle:hover .tooltip {
+            display: block;
+        }
+
+        .tooltip-cost {
+            display: inline-block;
+            background: #fef3c7;
+            color: #92400e;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-top: 6px;
         }
 
         .digest-name.editable {
@@ -1445,9 +1488,13 @@
                                     <option value="biweekly" ${frequency === 'biweekly' ? 'selected' : ''}>Biweekly (Mon & Thurs)</option>
                                     <option value="weekly" ${frequency === 'weekly' ? 'selected' : ''}>Weekly (Mondays)</option>
                                 </select>
-                                <label class="transcript-toggle" title="Fetch video transcripts for deeper AI analysis (uses more API tokens)">
+                                <label class="transcript-toggle">
                                     <input type="checkbox" ${digest.fetch_transcripts ? 'checked' : ''} onchange="changeTranscriptSetting(${index}, this.checked)">
                                     <span class="toggle-label">Transcript Analysis</span>
+                                    <div class="tooltip">
+                                        Fetches video transcripts for deeper AI analysis of what was actually said.
+                                        <span class="tooltip-cost">~3x more expensive</span>
+                                    </div>
                                 </label>
                             </div>
                         </div>
