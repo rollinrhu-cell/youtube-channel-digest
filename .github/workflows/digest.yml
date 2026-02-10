@@ -2,9 +2,9 @@ name: YouTube Digest
 
 on:
   schedule:
-    # Run at 9am ET (14:00 UTC during EST, 13:00 UTC during EDT)
-    # Using 13:00 UTC = 9am EDT / 8am EST
-    - cron: '0 13 * * *'
+    # Run at 6am ET (11:00 UTC during EST, 10:00 UTC during EDT)
+    # Using 10:00 UTC = 6am EDT / 5am EST
+    - cron: '0 10 * * *'
   workflow_dispatch:
     inputs:
       digest_id:
