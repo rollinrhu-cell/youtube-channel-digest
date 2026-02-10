@@ -279,26 +279,24 @@ Sample comments: {'; '.join(v.get('sample_comments', [])[:5])}
 """
         video_summaries.append(summary)
 
-    # Get overarching themes, TL;DR, and cross-channel connections
+    # Get overarching themes and cross-channel connections
     themes_prompt = f"""Analyze these YouTube videos from the "{digest_name}" digest and provide:
 
-1. TLDR: Write a 2-3 sentence TL;DR summary of the most important/interesting content this week. What should someone know if they only read this?
+1. THEMES: Identify overarching themes, trends, or notable patterns across the channels (2-4 sentences). Note any distinctive disagreements or debates between channels.
 
-2. THEMES: Identify overarching themes, trends, or notable patterns across the channels. Note any distinctive disagreements or debates between channels.
-
-3. CROSS_CHANNEL: List any topics that were discussed by MULTIPLE channels (minimum 2 channels). Format as topic name followed by which channels covered it.
+2. CROSS_CHANNEL: List any topics that were discussed by MULTIPLE channels (minimum 2 channels). Format as topic name followed by which channels covered it.
 
 Videos:
 {"".join(video_summaries)}
 
 You MUST respond with ONLY valid JSON in this exact format:
-{{"tldr": "2-3 sentence summary here", "themes": "2-4 sentences about themes and disagreements", "cross_channel": [{{"topic": "Topic Name", "channels": ["Channel 1", "Channel 2"]}}]}}"""
+{{"themes": "2-4 sentences about themes and disagreements", "cross_channel": [{{"topic": "Topic Name", "channels": ["Channel 1", "Channel 2"]}}]}}"""
 
-    themes_result = {"tldr": "", "themes": "Theme analysis unavailable", "cross_channel": []}
+    themes_result = {"themes": "Theme analysis unavailable", "cross_channel": []}
     try:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=700,
+            max_tokens=500,
             messages=[{"role": "user", "content": themes_prompt}]
         )
         text = response.content[0].text.strip()
@@ -361,7 +359,6 @@ If no guests, use empty array: "guests": []"""
 
     return {
         "themes": themes,
-        "tldr": themes_result.get("tldr", ""),
         "cross_channel": themes_result.get("cross_channel", []),
         "video_analyses": video_analyses
     }
@@ -532,17 +529,6 @@ def format_email_html(
         </div>
         """
 
-    # Build TL;DR section
-    tldr = analysis.get("tldr", "")
-    tldr_html = ""
-    if tldr:
-        tldr_html = f"""
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
-            <h2 style="font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 8px 0; opacity: 0.9;">TL;DR</h2>
-            <p style="margin: 0; font-size: 16px; line-height: 1.5;">{tldr}</p>
-        </div>
-        """
-
     # Build cross-channel connections section
     cross_channel = analysis.get("cross_channel", [])
     cross_channel_html = ""
@@ -575,14 +561,12 @@ def format_email_html(
         <h1 style="font-size: 24px; margin-bottom: 4px;">{digest_name}</h1>
         <p style="color: #666; margin-top: 0; margin-bottom: 24px;">{date_range}</p>
 
-        {tldr_html}
-
-        {cross_channel_html}
-
-        <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 32px;">
+        <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 24px;">
             <h2 style="font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #666; margin: 0 0 8px 0;">This Week's Themes</h2>
             <p style="margin: 0; font-size: 15px; line-height: 1.5;">{analysis.get('themes', 'No themes available.')}</p>
         </div>
+
+        {cross_channel_html}
 
         <h2 style="font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #666; margin-bottom: 16px;">New Uploads ({len(videos)})</h2>
 
