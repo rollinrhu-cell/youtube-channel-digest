@@ -414,7 +414,7 @@ def format_email_html(
         # Must watch badge
         must_watch_badge = ""
         if v["id"] in must_watch_ids:
-            must_watch_badge = '<span style="display: inline-block; background: #fef3c7; color: #92400e; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-left: 8px;">MUST WATCH</span>'
+            must_watch_badge = '<span style="display: inline-block; background: #fef3c7; color: #92400e; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-left: 8px;">HIGH ENGAGEMENT</span>'
 
         # Build guest line
         guest_line = ""
@@ -544,23 +544,39 @@ def send_email(recipients: list[str], subject: str, html_content: str):
 
 
 def should_run_digest(digest: dict, state: dict) -> bool:
-    """Check if a digest should run based on frequency."""
+    """Check if a digest should run based on frequency and day of week.
+
+    Schedule:
+    - daily: runs every day
+    - biweekly: runs on Monday (0) and Thursday (3)
+    - weekly: runs on Monday (0)
+    """
     digest_id = digest.get("id", digest["name"])
     last_run = state.get(digest_id, {}).get("last_run")
+    now = datetime.now()
+    frequency = digest.get("frequency", "daily")
+    today = now.weekday()  # Monday=0, Sunday=6
 
+    # Check if today is a valid day for this frequency
+    if frequency == "biweekly":
+        if today not in [0, 3]:  # Monday or Thursday
+            return False
+    elif frequency == "weekly":
+        if today != 0:  # Monday only
+            return False
+
+    # If no previous run, run it
     if not last_run:
         return True
 
+    # Check we haven't already run today
     last_run_dt = datetime.fromisoformat(last_run)
-    now = datetime.now()
-    frequency = digest.get("frequency", "daily")
+    if last_run_dt.date() == now.date():
+        return False
 
+    # For daily, just check it's a new day
     if frequency == "daily":
         return (now - last_run_dt).days >= 1
-    elif frequency == "biweekly":
-        return (now - last_run_dt).days >= 3  # Twice a week ~ every 3-4 days
-    elif frequency == "weekly":
-        return (now - last_run_dt).days >= 7
 
     return True
 
@@ -570,7 +586,7 @@ def run_digest(digest: dict, state: dict, subscribers: dict) -> bool:
     name = digest["name"]
     digest_id = digest.get("id", name)
     # Get recipients from secret (priority) or fall back to config
-    recipients = subscribers.get(digest_id, digest.get("recipients", []))
+    recipients = subscribers.get(digest_id, [])
     channels = digest["channels"]
     frequency = digest.get("frequency", "daily")
 
@@ -696,7 +712,7 @@ def main():
             continue
 
         # Get recipients from secret (priority) or config
-        recipients = subscribers.get(digest_id, digest.get("recipients", []))
+        recipients = subscribers.get(digest_id, [])
 
         # Skip digests with no recipients
         if not recipients:
