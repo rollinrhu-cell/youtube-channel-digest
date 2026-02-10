@@ -279,28 +279,36 @@ Sample comments: {'; '.join(v.get('sample_comments', [])[:5])}
 """
         video_summaries.append(summary)
 
-    # Get overarching themes
-    themes_prompt = f"""Analyze these YouTube videos from the "{digest_name}" digest and write a brief summary identifying:
+    # Get overarching themes, TL;DR, and cross-channel connections
+    themes_prompt = f"""Analyze these YouTube videos from the "{digest_name}" digest and provide:
 
-1. Overarching themes, trends, or notable patterns across the channels this week
-2. Any distinctive disagreements, contrasting perspectives, or debates between channels on the same topics (if any exist)
+1. TLDR: Write a 2-3 sentence TL;DR summary of the most important/interesting content this week. What should someone know if they only read this?
+
+2. THEMES: Identify overarching themes, trends, or notable patterns across the channels. Note any distinctive disagreements or debates between channels.
+
+3. CROSS_CHANNEL: List any topics that were discussed by MULTIPLE channels (minimum 2 channels). Format as topic name followed by which channels covered it.
 
 Videos:
 {"".join(video_summaries)}
 
-Write 2-4 concise sentences. First highlight the common themes, then note any interesting disagreements or contrasting takes between channels if you notice any. Be specific about topics and which channels disagree."""
+You MUST respond with ONLY valid JSON in this exact format:
+{{"tldr": "2-3 sentence summary here", "themes": "2-4 sentences about themes and disagreements", "cross_channel": [{{"topic": "Topic Name", "channels": ["Channel 1", "Channel 2"]}}]}}"""
 
-    themes = None
+    themes_result = {"tldr": "", "themes": "Theme analysis unavailable", "cross_channel": []}
     try:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=500,
+            max_tokens=700,
             messages=[{"role": "user", "content": themes_prompt}]
         )
-        themes = response.content[0].text.strip()
+        text = response.content[0].text.strip()
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if json_match:
+            themes_result = json.loads(json_match.group())
     except Exception as e:
         print(f"    Theme analysis failed: {e}")
-        themes = "Theme analysis unavailable"
+
+    themes = themes_result.get("themes", "Theme analysis unavailable")
 
     # Analyze each video
     video_analyses = {}
@@ -309,6 +317,11 @@ Write 2-4 concise sentences. First highlight the common themes, then note any in
         transcript_section = ""
         if transcript:
             transcript_section = f"\nTranscript excerpt: {transcript[:2000]}"
+
+        quote_instruction = ""
+        if transcript:
+            quote_instruction = """
+6. BEST_QUOTE: Extract ONE compelling, interesting, or notable quote from the transcript. Pick something insightful, controversial, or memorable. Include the speaker if identifiable."""
 
         video_prompt = f"""Analyze this YouTube podcast/video and extract information.
 
@@ -322,10 +335,10 @@ Extract:
 2. TOPICS: What are the 2-3 main topics or themes discussed? Be specific.
 3. SENTIMENT: Based on the comments, is the overall reaction positive, negative, or mixed?
 4. CATEGORY: Assign ONE category from: Politics, Tech, Business, Entertainment, Science, Sports, Culture, News, Education, Other
-5. SUMMARY: Write a 1-2 sentence summary of what this video is about based on the title, description{' and transcript' if transcript else ''}. Be specific and informative.
+5. SUMMARY: Write a 1-2 sentence summary of what this video is about based on the title, description{' and transcript' if transcript else ''}. Be specific and informative.{quote_instruction}
 
 You MUST respond with ONLY valid JSON in this exact format, no other text:
-{{"guests": ["Full Name 1"], "topics": ["topic 1", "topic 2"], "sentiment": "positive", "category": "Politics", "summary": "A concise summary of the video content."}}
+{{"guests": ["Full Name 1"], "topics": ["topic 1", "topic 2"], "sentiment": "positive", "category": "Politics", "summary": "A concise summary.", "best_quote": "Quote here or empty string if no transcript"}}
 
 If no guests, use empty array: "guests": []"""
 
@@ -344,9 +357,14 @@ If no guests, use empty array: "guests": []"""
         except Exception as e:
             print(f"    Video analysis failed for {v['title']}: {e}")
 
-        video_analyses[v['id']] = parsed or {"guests": [], "topics": [], "sentiment": "unknown", "category": "Other", "summary": ""}
+        video_analyses[v['id']] = parsed or {"guests": [], "topics": [], "sentiment": "unknown", "category": "Other", "summary": "", "best_quote": ""}
 
-    return {"themes": themes, "video_analyses": video_analyses}
+    return {
+        "themes": themes,
+        "tldr": themes_result.get("tldr", ""),
+        "cross_channel": themes_result.get("cross_channel", []),
+        "video_analyses": video_analyses
+    }
 
 
 def format_email_html(
@@ -384,6 +402,31 @@ def format_email_html(
     must_watch_threshold = max(1, len(sorted_rates) // 5)  # Top 20%, at least 1
     must_watch_ids = set(vid_id for vid_id, _ in sorted_rates[:must_watch_threshold])
 
+    # Calculate per-channel average views for trend indicators
+    channel_views = {}
+    for v in videos:
+        channel = v.get("channel", "Unknown")
+        views = v.get("views", 0)
+        if channel not in channel_views:
+            channel_views[channel] = []
+        channel_views[channel].append(views)
+
+    channel_avg_views = {ch: sum(vw) / len(vw) if vw else 0 for ch, vw in channel_views.items()}
+
+    def get_view_trend(video: dict) -> str:
+        """Return trend indicator: above/below channel average."""
+        views = video.get("views", 0)
+        channel = video.get("channel", "Unknown")
+        avg = channel_avg_views.get(channel, 0)
+        if avg == 0 or views == 0:
+            return ""
+        ratio = views / avg
+        if ratio >= 1.5:
+            return '<span style="color: #059669; font-size: 11px; margin-left: 4px;">↑ trending</span>'
+        elif ratio <= 0.5:
+            return '<span style="color: #dc2626; font-size: 11px; margin-left: 4px;">↓ below avg</span>'
+        return ""
+
     # Group videos by category
     categories = {}
     for v in videos:
@@ -401,6 +444,7 @@ def format_email_html(
         guests = vid_analysis.get("guests", [])
         summary = vid_analysis.get("summary", "")
         sentiment = vid_analysis.get("sentiment", "unknown")
+        best_quote = vid_analysis.get("best_quote", "")
 
         views = v.get("views", 0)
         views_str = f"{views:,}" if views else "N/A"
@@ -410,6 +454,9 @@ def format_email_html(
 
         # Publish date
         pub_date = _format_publish_date(v.get("published", ""))
+
+        # View trend indicator
+        view_trend = get_view_trend(v)
 
         # Must watch badge
         must_watch_badge = ""
@@ -425,6 +472,11 @@ def format_email_html(
         summary_line = ""
         if summary:
             summary_line = f'<p style="margin: 8px 0; font-size: 14px; color: #444; line-height: 1.5;">{summary}</p>'
+
+        # Build quote line
+        quote_line = ""
+        if best_quote:
+            quote_line = f'<blockquote style="margin: 8px 0; padding: 8px 12px; border-left: 3px solid #e5e7eb; color: #555; font-style: italic; font-size: 13px;">"{best_quote}"</blockquote>'
 
         # Build sentiment line
         sentiment_emoji = {"positive": "👍", "negative": "👎", "mixed": "🤔"}.get(sentiment, "")
@@ -445,10 +497,11 @@ def format_email_html(
     {must_watch_badge}
 </p>
 <p style="margin: 0 0 8px 0; color: #666; font-size: 13px;">
-    {v['channel']} &bull; {pub_date} &bull; {views_str} views{sentiment_line}
+    {v['channel']} &bull; {pub_date} &bull; {views_str} views{view_trend}{sentiment_line}
 </p>
 {guest_line}
 {summary_line}
+{quote_line}
 </div>
 """
 
@@ -479,6 +532,38 @@ def format_email_html(
         </div>
         """
 
+    # Build TL;DR section
+    tldr = analysis.get("tldr", "")
+    tldr_html = ""
+    if tldr:
+        tldr_html = f"""
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+            <h2 style="font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 8px 0; opacity: 0.9;">TL;DR</h2>
+            <p style="margin: 0; font-size: 16px; line-height: 1.5;">{tldr}</p>
+        </div>
+        """
+
+    # Build cross-channel connections section
+    cross_channel = analysis.get("cross_channel", [])
+    cross_channel_html = ""
+    if cross_channel:
+        connections = ""
+        for item in cross_channel[:5]:  # Limit to 5
+            topic = item.get("topic", "")
+            channels = item.get("channels", [])
+            if topic and len(channels) >= 2:
+                channels_str = ", ".join(channels)
+                connections += f'<li style="margin-bottom: 6px;"><strong>{topic}</strong> — {channels_str}</li>'
+        if connections:
+            cross_channel_html = f"""
+            <div style="background: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 16px; margin-bottom: 24px;">
+                <h2 style="font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #0369a1; margin: 0 0 12px 0;">🔗 Cross-Channel Topics</h2>
+                <ul style="margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6; color: #1a1a1a;">
+                    {connections}
+                </ul>
+            </div>
+            """
+
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -489,6 +574,10 @@ def format_email_html(
     <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1a1a1a;">
         <h1 style="font-size: 24px; margin-bottom: 4px;">{digest_name}</h1>
         <p style="color: #666; margin-top: 0; margin-bottom: 24px;">{date_range}</p>
+
+        {tldr_html}
+
+        {cross_channel_html}
 
         <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 32px;">
             <h2 style="font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #666; margin: 0 0 8px 0;">This Week's Themes</h2>
