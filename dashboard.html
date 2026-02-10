@@ -1288,15 +1288,22 @@
                 );
                 const data = await response.json();
 
+                if (data.error) {
+                    console.warn('YouTube API error:', data.error.message);
+                    return;
+                }
+
                 if (data.items) {
                     for (const item of data.items) {
                         channelNames[item.id] = {
                             name: item.snippet.title,
                             thumbnail: item.snippet.thumbnails.default.url,
-                            subscriberCount: item.statistics?.subscriberCount || null
+                            subscriberCount: item.statistics?.subscriberCount || null,
+                            hiddenSubs: item.statistics?.hiddenSubscriberCount || false
                         };
                     }
                     localStorage.setItem('channel_names_cache', JSON.stringify(channelNames));
+                    console.log('Fetched channel data for', data.items.length, 'channels');
                 }
             } catch (e) {
                 console.error('Failed to fetch channel names:', e);
@@ -1317,7 +1324,9 @@
         function getChannelSubCount(url) {
             const match = url.match(/\/channel\/([^\/\?]+)/);
             if (match && channelNames[match[1]]) {
-                return formatSubscriberCount(channelNames[match[1]].subscriberCount);
+                const data = channelNames[match[1]];
+                if (data.hiddenSubs) return 'Subs hidden';
+                return formatSubscriberCount(data.subscriberCount);
             }
             return '';
         }
