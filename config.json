@@ -1,23 +1,6 @@
 {
   "digests": [
     {
-      "id": "democratic-party-monitor",
-      "name": "Center Left Youtube Digest",
-      "channels": [
-        "https://www.youtube.com/channel/UCKRoXz3hHAu2XL_k3Ef4vJQ",
-        "https://www.youtube.com/channel/UCG4Hp1KbGw4e02N7FpPXDgQ",
-        "https://www.youtube.com/channel/UCQlJ7XpBtiMLKNSd4RAJmRQ",
-        "https://www.youtube.com/channel/UCnbKOlm6H9njgmN-Yil90Rg",
-        "https://www.youtube.com/channel/UCcvDWzvxz6Kn1iPQHMl2teA",
-        "https://www.youtube.com/channel/UCehBVAPy-bxmnbNARF-_tvA",
-        "https://www.youtube.com/channel/UC9r9HYFxEQOBXSopFS61ZWg",
-        "https://www.youtube.com/channel/UC1E1SVcVyU3ntWMSQEp38Yw",
-        "https://www.youtube.com/@ivehaditpodcast",
-        "https://www.youtube.com/channel/UClJ6spyhHjj2Kb46l2b_xqA"
-      ],
-      "frequency": "biweekly"
-    },
-    {
       "id": "ai-and-tech-news",
       "name": "AI and Tech Youtube Digest",
       "channels": [
