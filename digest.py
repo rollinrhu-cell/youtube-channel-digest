@@ -475,11 +475,11 @@ def format_email_html(
         if best_quote:
             quote_line = f'<blockquote style="margin: 8px 0; padding: 8px 12px; border-left: 3px solid #e5e7eb; color: #555; font-style: italic; font-size: 13px;">"{best_quote}"</blockquote>'
 
-        # Build sentiment line
+        # Build sentiment line (audience reaction based on comments)
         sentiment_emoji = {"positive": "👍", "negative": "👎", "mixed": "🤔"}.get(sentiment, "")
         sentiment_line = ""
         if sentiment and sentiment != "unknown":
-            sentiment_line = f'<span style="margin-left: 12px; color: #666;">{sentiment} {sentiment_emoji}</span>'
+            sentiment_line = f'<span style="margin-left: 12px; color: #666;">Audience: {sentiment} {sentiment_emoji}</span>'
 
         # YouTube thumbnail URL
         thumbnail_url = f"https://img.youtube.com/vi/{v['id']}/mqdefault.jpg"
