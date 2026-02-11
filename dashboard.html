@@ -856,7 +856,26 @@
     </div>
 
     <!-- libsodium for encrypting GitHub secrets -->
-    <script src="https://cdn.jsdelivr.net/npm/libsodium-wrappers@0.7.13/dist/sodium.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/libsodium-wrappers/0.7.13/sodium.min.js"
+            integrity="sha512-+dZsuDd89bBMVUGH0OO4TCCE1F9BQGR1WxhO0kak36bSPfhB5r1g5nlwwGDCixn9FjB5P1KCQ7hSJd5sElPLew=="
+            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script>
+        // Initialize sodium when ready
+        let sodiumReady = false;
+        if (typeof _sodium !== 'undefined') {
+            _sodium.ready.then(() => {
+                window.sodiumLib = _sodium;
+                sodiumReady = true;
+                console.log('Sodium library loaded successfully');
+            });
+        } else if (typeof sodium !== 'undefined') {
+            sodium.ready.then(() => {
+                window.sodiumLib = sodium;
+                sodiumReady = true;
+                console.log('Sodium library loaded successfully');
+            });
+        }
+    </script>
 
     <script>
         const REPO_OWNER = 'rollinrhu-cell';
@@ -986,10 +1005,22 @@
                 const { key, key_id } = await keyResponse.json();
 
                 // Wait for sodium library to be ready
-                if (!window.sodium) {
-                    throw new Error('Encryption library not loaded - refresh the page');
+                if (!window.sodiumLib) {
+                    // Try to wait for it
+                    await new Promise((resolve, reject) => {
+                        let attempts = 0;
+                        const check = () => {
+                            if (window.sodiumLib) {
+                                resolve();
+                            } else if (attempts++ > 20) {
+                                reject(new Error('Encryption library failed to load after 2s'));
+                            } else {
+                                setTimeout(check, 100);
+                            }
+                        };
+                        check();
+                    });
                 }
-                await window.sodium.ready;
 
                 // Encrypt the subscribers JSON
                 const secretValue = JSON.stringify(digestSubscribers);
@@ -998,7 +1029,7 @@
                 const keyBytes = Uint8Array.from(atob(key), c => c.charCodeAt(0));
 
                 // Use libsodium to encrypt
-                const encryptedBytes = window.sodium.crypto_box_seal(messageBytes, keyBytes);
+                const encryptedBytes = window.sodiumLib.crypto_box_seal(messageBytes, keyBytes);
                 const encryptedValue = btoa(String.fromCharCode.apply(null, encryptedBytes));
 
                 // Update the secret
