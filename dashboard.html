@@ -856,7 +856,7 @@
     </div>
 
     <!-- libsodium for encrypting GitHub secrets -->
-    <script src="https://cdn.jsdelivr.net/npm/tweetsodium@0.0.5/dist/tweetsodium.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/libsodium-wrappers@0.7.13/dist/sodium.min.js"></script>
 
     <script>
         const REPO_OWNER = 'rollinrhu-cell';
@@ -985,10 +985,11 @@
 
                 const { key, key_id } = await keyResponse.json();
 
-                // Check if sodium library is loaded
-                if (!window.sodium || !window.sodium.seal) {
+                // Wait for sodium library to be ready
+                if (!window.sodium) {
                     throw new Error('Encryption library not loaded - refresh the page');
                 }
+                await window.sodium.ready;
 
                 // Encrypt the subscribers JSON
                 const secretValue = JSON.stringify(digestSubscribers);
@@ -996,8 +997,8 @@
                 const messageBytes = new TextEncoder().encode(secretValue);
                 const keyBytes = Uint8Array.from(atob(key), c => c.charCodeAt(0));
 
-                // Use tweetsodium to encrypt
-                const encryptedBytes = window.sodium.seal(messageBytes, keyBytes);
+                // Use libsodium to encrypt
+                const encryptedBytes = window.sodium.crypto_box_seal(messageBytes, keyBytes);
                 const encryptedValue = btoa(String.fromCharCode.apply(null, encryptedBytes));
 
                 // Update the secret
