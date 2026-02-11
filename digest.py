@@ -773,6 +773,12 @@ def main():
     state = load_state()
     subscribers = load_subscribers()
 
+    # Debug: show what we loaded
+    print(f"Loaded {len(config.get('digests', []))} digests from config")
+    print(f"Subscribers secret has {len(subscribers)} digest entries: {list(subscribers.keys())}")
+    for digest_id, emails in subscribers.items():
+        print(f"  {digest_id}: {len(emails)} subscribers")
+
     if not config.get("digests"):
         print("No digests configured. Add digests via the web interface or config.json")
         return
@@ -789,7 +795,9 @@ def main():
 
         # Skip digests with no recipients
         if not recipients:
-            print(f"Skipping {digest['name']} (no recipients)")
+            print(f"Skipping {digest['name']} (no recipients - check DIGEST_SUBSCRIBERS secret)")
+            print(f"  Looking for digest_id: '{digest_id}'")
+            print(f"  Available in secret: {list(subscribers.keys())}")
             continue
 
         # When running a specific digest, always run it (ignore schedule)
