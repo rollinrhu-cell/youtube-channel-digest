@@ -1,8 +1,8 @@
 {
   "digests": [
     {
-      "id": "center-left-digest",
-      "name": "Center Left Digest",
+      "id": "center-left-youtube-digest",
+      "name": "Center Left Youtube Digest",
       "recipients": [
         "rollin.hu@nytimes.com"
       ],
