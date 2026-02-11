@@ -855,21 +855,8 @@
         </div>
     </div>
 
-    <!-- libsodium for encrypting GitHub secrets -->
-    <script src="https://cdn.jsdelivr.net/npm/libsodium-wrappers@0.7.11/dist/modules/libsodium-wrappers.min.js"></script>
-    <script>
-        // Initialize sodium when ready
-        window.sodiumLib = null;
-        (async function() {
-            if (typeof sodium !== 'undefined') {
-                await sodium.ready;
-                window.sodiumLib = sodium;
-                console.log('Sodium library loaded successfully');
-            } else {
-                console.error('Sodium library not found');
-            }
-        })();
-    </script>
+    <!-- tweetsodium for encrypting GitHub secrets -->
+    <script src="https://unpkg.com/tweetsodium@0.0.4/dist/tweetsodium.js"></script>
 
     <script>
         const REPO_OWNER = 'rollinrhu-cell';
@@ -998,22 +985,9 @@
 
                 const { key, key_id } = await keyResponse.json();
 
-                // Wait for sodium library to be ready
-                if (!window.sodiumLib) {
-                    // Try to wait for it
-                    await new Promise((resolve, reject) => {
-                        let attempts = 0;
-                        const check = () => {
-                            if (window.sodiumLib) {
-                                resolve();
-                            } else if (attempts++ > 20) {
-                                reject(new Error('Encryption library failed to load after 2s'));
-                            } else {
-                                setTimeout(check, 100);
-                            }
-                        };
-                        check();
-                    });
+                // Check for tweetsodium
+                if (!window.sodium || !window.sodium.seal) {
+                    throw new Error('Encryption library not loaded - please refresh the page');
                 }
 
                 // Encrypt the subscribers JSON
@@ -1022,8 +996,8 @@
                 const messageBytes = new TextEncoder().encode(secretValue);
                 const keyBytes = Uint8Array.from(atob(key), c => c.charCodeAt(0));
 
-                // Use libsodium to encrypt
-                const encryptedBytes = window.sodiumLib.crypto_box_seal(messageBytes, keyBytes);
+                // Use tweetsodium to encrypt
+                const encryptedBytes = window.sodium.seal(messageBytes, keyBytes);
                 const encryptedValue = btoa(String.fromCharCode.apply(null, encryptedBytes));
 
                 // Update the secret
