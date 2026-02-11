@@ -33,6 +33,17 @@
         "https://www.youtube.com/channel/UCZcR2SVWaGWNlMqPxvQS3vw"
       ],
       "frequency": "biweekly"
+    },
+    {
+      "id": "rightwing-podcasts",
+      "name": "Rightwing Podcasts",
+      "recipients": [
+        "rollin.hu@nytimes.com"
+      ],
+      "channels": [
+        "https://www.youtube.com/channel/UCGttrUON87gWfU6dMWm1fcA"
+      ],
+      "frequency": "biweekly"
     }
   ]
 }
