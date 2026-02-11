@@ -985,8 +985,14 @@
 
                 const { key, key_id } = await keyResponse.json();
 
+                // Check if sodium library is loaded
+                if (!window.sodium || !window.sodium.seal) {
+                    throw new Error('Encryption library not loaded - refresh the page');
+                }
+
                 // Encrypt the subscribers JSON
                 const secretValue = JSON.stringify(digestSubscribers);
+                console.log('Syncing subscribers:', secretValue);
                 const messageBytes = new TextEncoder().encode(secretValue);
                 const keyBytes = Uint8Array.from(atob(key), c => c.charCodeAt(0));
 
@@ -1012,11 +1018,12 @@
                     throw new Error(`Failed to update secret: ${updateResponse.status}`);
                 }
 
-                console.log('Subscribers secret updated');
+                console.log('Subscribers secret updated successfully');
+                showToast('Subscribers synced to GitHub', 'success');
                 return true;
             } catch (error) {
                 console.error('Failed to update subscribers secret:', error);
-                showToast('Warning: Could not sync subscribers to secret', 'error');
+                showToast('Failed to sync subscribers: ' + error.message, 'error');
                 return false;
             }
         }
