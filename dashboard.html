@@ -856,25 +856,19 @@
     </div>
 
     <!-- libsodium for encrypting GitHub secrets -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/libsodium-wrappers/0.7.13/sodium.min.js"
-            integrity="sha512-+dZsuDd89bBMVUGH0OO4TCCE1F9BQGR1WxhO0kak36bSPfhB5r1g5nlwwGDCixn9FjB5P1KCQ7hSJd5sElPLew=="
-            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdn.jsdelivr.net/npm/libsodium-wrappers@0.7.11/dist/modules/libsodium-wrappers.min.js"></script>
     <script>
         // Initialize sodium when ready
-        let sodiumReady = false;
-        if (typeof _sodium !== 'undefined') {
-            _sodium.ready.then(() => {
-                window.sodiumLib = _sodium;
-                sodiumReady = true;
-                console.log('Sodium library loaded successfully');
-            });
-        } else if (typeof sodium !== 'undefined') {
-            sodium.ready.then(() => {
+        window.sodiumLib = null;
+        (async function() {
+            if (typeof sodium !== 'undefined') {
+                await sodium.ready;
                 window.sodiumLib = sodium;
-                sodiumReady = true;
                 console.log('Sodium library loaded successfully');
-            });
-        }
+            } else {
+                console.error('Sodium library not found');
+            }
+        })();
     </script>
 
     <script>
